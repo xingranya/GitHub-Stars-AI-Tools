@@ -1,12 +1,12 @@
 [package]
-name = "stars-ai-desktop"
+name = "gsat-desktop"
 version = "0.1.0"
-description = "本地优先的 GitHub Stars AI 知识库桌面应用"
+description = "本地优先的 GitHub-Stars-AI-Tools 桌面应用"
 authors = ["xingranya"]
 edition = "2021"
 
 [lib]
-name = "stars_ai_desktop_lib"
+name = "gsat_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,14 +1,19 @@
 use crate::auth::{github_api_get, github_api_get_optional, github_api_post};
 use base64::Engine;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 const STARRED_REPOSITORIES_API: &str = "https://api.github.com/user/starred";
 const STARRED_ACCEPT: &str = "application/vnd.github.star+json";
 const README_ACCEPT: &str = "application/vnd.github+json";
 const GIST_API: &str = "https://api.github.com/gists";
+const SEARCH_REPOSITORIES_API: &str = "https://api.github.com/search/repositories";
 const ANNOTATION_GIST_FILE: &str = "github-stars-ai-tools-annotations.json";
 const PAGE_SIZE: u16 = 100;
+
+pub fn starred_page_size() -> usize {
+    PAGE_SIZE as usize
+}
 
 #[derive(Debug, Clone)]
 pub struct StarredRepository {
@@ -42,9 +47,23 @@ pub struct GistExportResult {
     pub html_url: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubRepositoryRecommendation {
+    pub full_name: String,
+    pub description: Option<String>,
+    pub language: Option<String>,
+    pub topics: Vec<String>,
+    pub html_url: String,
+    pub stars_count: u64,
+    pub forks_count: u64,
+    pub pushed_at: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct GistFileResponse {
     content: Option<String>,
+    raw_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -83,30 +102,25 @@ struct GitHubRepository {
 }
 
 #[derive(Deserialize)]
-struct GitHubOwner {
-    login: String,
+struct GitHubSearchRepositoryResponse {
+    items: Vec<GitHubSearchRepositoryItem>,
 }
 
-pub fn fetch_all_starred_repositories(
-    token: &str,
-    account_id: &str,
-) -> Result<Vec<StarredRepository>, String> {
-    let mut page = 1_u32;
-    let mut repositories = Vec::new();
+#[derive(Deserialize)]
+struct GitHubSearchRepositoryItem {
+    full_name: String,
+    description: Option<String>,
+    language: Option<String>,
+    topics: Option<Vec<String>>,
+    html_url: String,
+    stargazers_count: u64,
+    forks_count: u64,
+    pushed_at: Option<String>,
+}
 
-    loop {
-        let page_items = fetch_starred_page(token, account_id, page)?;
-        let page_len = page_items.len();
-        repositories.extend(page_items);
-
-        if page_len < PAGE_SIZE as usize {
-            break;
-        }
-
-        page += 1;
-    }
-
-    Ok(repositories)
+#[derive(Deserialize)]
+struct GitHubOwner {
+    login: String,
 }
 
 pub fn fetch_readme(
@@ -156,7 +170,7 @@ pub fn create_annotation_gist(
         serde_json::json!({ "content": snapshot_json }),
     );
     let body = serde_json::json!({
-        "description": "GitHub Stars AI Tools annotation snapshot",
+        "description": "GitHub-Stars-AI-Tools annotation snapshot",
         "public": false,
         "files": files,
     })
@@ -179,16 +193,69 @@ pub fn fetch_annotation_gist(token: &str, gist_id: &str) -> Result<String, Strin
     let file = response
         .files
         .get(ANNOTATION_GIST_FILE)
-        .ok_or_else(|| "Gist 中没有 GitHub Stars AI Tools 注解快照文件".to_owned())?;
+        .ok_or_else(|| "Gist 中没有 GitHub-Stars-AI-Tools 注解快照文件".to_owned())?;
 
-    file.content
-        .clone()
-        .ok_or_else(|| "Gist 注解快照内容为空或过大，当前版本无法导入".to_owned())
+    if let Some(content) = file.content.clone() {
+        return Ok(content);
+    }
+
+    let raw_url = file
+        .raw_url
+        .as_deref()
+        .ok_or_else(|| "Gist 注解快照内容为空，且没有可读取的原始文件地址".to_owned())?;
+    github_api_get(token, raw_url, README_ACCEPT)
+}
+
+pub fn search_repositories(
+    token: &str,
+    query: &str,
+    per_page: usize,
+) -> Result<Vec<GitHubRepositoryRecommendation>, String> {
+    let normalized_query = query.trim();
+    if normalized_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let url = format!(
+        "{SEARCH_REPOSITORIES_API}?q={query}&sort=stars&order=desc&per_page={per_page}",
+        query = percent_encode(normalized_query),
+        per_page = per_page.clamp(1, 30),
+    );
+    let body = github_api_get(token, &url, README_ACCEPT)?;
+    let response = serde_json::from_str::<GitHubSearchRepositoryResponse>(&body)
+        .map_err(|error| format!("GitHub 搜索响应解析失败：{error}"))?;
+
+    Ok(response
+        .items
+        .into_iter()
+        .map(|item| GitHubRepositoryRecommendation {
+            full_name: item.full_name,
+            description: item.description,
+            language: item.language,
+            topics: item.topics.unwrap_or_default(),
+            html_url: item.html_url,
+            stars_count: item.stargazers_count,
+            forks_count: item.forks_count,
+            pushed_at: item.pushed_at,
+        })
+        .collect())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn percent_encode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }
 
 fn current_iso_timestamp() -> Result<String, String> {
@@ -206,7 +273,7 @@ fn current_iso_timestamp() -> Result<String, String> {
         .map_err(|_| "系统时间输出不是有效文本".to_owned())
 }
 
-fn fetch_starred_page(
+pub fn fetch_starred_repositories_page(
     token: &str,
     account_id: &str,
     page: u32,
@@ -232,7 +299,7 @@ fn map_starred_repository(
         .map_err(|error| format!("GitHub Topics 序列化失败：{error}"))?;
 
     Ok(StarredRepository {
-        id: item.repo.id.to_string(),
+        id: repository_local_id(account_id, item.repo.id),
         account_id: account_id.to_owned(),
         owner: item.repo.owner.login,
         name: item.repo.name,
@@ -246,4 +313,22 @@ fn map_starred_repository(
         starred_at: item.starred_at,
         pushed_at: item.repo.pushed_at,
     })
+}
+
+fn repository_local_id(account_id: &str, github_repository_id: u64) -> String {
+    format!("{account_id}:{github_repository_id}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repository_local_id_is_scoped_by_account() {
+        assert_eq!(repository_local_id("1001", 42), "1001:42");
+        assert_ne!(
+            repository_local_id("1001", 42),
+            repository_local_id("1002", 42)
+        );
+    }
 }
