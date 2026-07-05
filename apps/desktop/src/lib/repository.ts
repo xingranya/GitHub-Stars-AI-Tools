@@ -37,7 +37,7 @@ export function buildRepositoryPanelSubtitle(page: RepositoryListPage | null, is
     return '同步后开始浏览和整理';
   }
 
-  return `${page.items.length} shown / ${page.totalCount} total`;
+  return `显示 ${page.items.length} 个 / 共 ${page.totalCount} 个`;
 }
 
 export function buildRepositorySearchExplanation(
