@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, ChevronRight, Rocket, Github as GitHub, Database, Sparkles } from 'lucide-react';
+import { Check, ChevronRight, Rocket, GitBranch, Database, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -67,7 +67,7 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
                 将你的 GitHub Stars 转化为可搜索、可管理的个人知识库
               </p>
               <div className="mt-10 grid gap-4">
-                <FeatureItem icon={<GitHub className="size-5" />} title="本地优先" description="所有数据存储在本地 SQLite，完全掌控" />
+                <FeatureItem icon={<GitBranch className="size-5" />} title="本地优先" description="所有数据存储在本地 SQLite，完全掌控" />
                 <FeatureItem icon={<Database className="size-5" />} title="智能检索" description="支持关键词、语义搜索和混合模式" />
                 <FeatureItem icon={<Sparkles className="size-5" />} title="AI 增强" description="自动生成中文摘要与关键词提取" />
               </div>
@@ -85,7 +85,7 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
           {currentStep === 'github' && (
             <div className="text-center">
               <div className="mx-auto mb-8 grid size-20 place-items-center rounded-2xl bg-primary/10">
-                <GitHub className="size-10 text-primary" />
+                <GitBranch className="size-10 text-primary" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight">连接 GitHub</h2>
               <p className="mt-3 text-muted-foreground">
