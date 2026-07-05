@@ -1,5 +1,5 @@
 /**
- * GitHub Stars AI Tools - Design System
+ * GitHub-Stars-AI-Tools - Design System
  * 基于 Stitch 设计规范的毛玻璃风格系统
  * 色彩 token 已迁移至 styles.css 的 @theme 块（Tailwind v4）
  * 本文件保留：字体导入、Material Symbols 配置、玻璃拟态工具类、排版类、交互工具类
@@ -38,14 +38,14 @@
   font-size: 30px;
   line-height: 38px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 .font-headline-md {
   font-family: var(--font-headline-md);
   font-size: 24px;
   line-height: 32px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 .font-body-lg {
   font-family: var(--font-body-lg);
@@ -104,6 +104,33 @@
   transform: translateY(-2px);
   box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.08);
   background: rgba(255, 255, 255, 0.8);
+}
+
+.dark .glass-sidebar {
+  background: rgb(13 15 20 / 0.82);
+  border-right-color: rgb(255 255 255 / 0.08);
+  box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.03);
+}
+
+.dark .glass-topbar {
+  background: rgb(17 19 24 / 0.86);
+  border-bottom-color: rgb(255 255 255 / 0.08);
+}
+
+.dark .glass-panel {
+  background: rgb(23 26 33 / 0.82);
+  border-color: rgb(255 255 255 / 0.1);
+}
+
+.dark .glass-card {
+  background: rgb(23 26 33 / 0.76);
+  border-color: rgb(255 255 255 / 0.1);
+  box-shadow: 0 12px 32px -24px rgb(0 0 0 / 0.8);
+}
+
+.dark .glass-card:hover {
+  background: rgb(29 32 40 / 0.86);
+  box-shadow: 0 18px 40px -26px rgb(0 0 0 / 0.9);
 }
 
 .glass-modal {

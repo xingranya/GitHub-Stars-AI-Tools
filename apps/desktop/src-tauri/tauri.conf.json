@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "GitHub Stars AI Tools",
+  "productName": "GitHub-Stars-AI-Tools",
   "version": "0.1.0",
   "identifier": "com.xingranya.github-stars-ai-tools",
   "build": {
@@ -12,11 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "GitHub Stars AI Tools",
+        "title": "GitHub-Stars-AI-Tools",
         "width": 1280,
         "height": 820,
-        "minWidth": 960,
-        "minHeight": 680
+        "minWidth": 720,
+        "minHeight": 560
       }
     ],
     "security": {
