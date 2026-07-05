@@ -1,8 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { getAiConfigMessage } from '@/lib/ai-config';
 import { emptyRepositoryFilters, getRepositoryStats } from '@/lib/repository';
 import { optionalRequestText } from '@/lib/format';
 import type {
+  AISettings,
+  BatchAiDocumentSummary,
   BackendStatus,
   GistAnnotationExportSummary,
   GistAnnotationImportSummary,
@@ -17,6 +21,7 @@ import type {
   RepositoryListPage,
   StarSyncSummary,
   TagItem,
+  TaskProgressEvent,
 } from '@/types';
 
 const initialAuthState: GitHubAuthState = {
@@ -24,10 +29,18 @@ const initialAuthState: GitHubAuthState = {
   user: null,
 };
 
+const emptyRepositoryPage: RepositoryListPage = {
+  items: [],
+  totalCount: 0,
+  limit: 5000,
+  offset: 0,
+};
+
 export function useStarsWorkspace() {
   const [status, setStatus] = useState<BackendStatus | null>(null);
   const [authState, setAuthState] = useState<GitHubAuthState>(initialAuthState);
   const [token, setToken] = useState('');
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [isSavingToken, setIsSavingToken] = useState(false);
   const [isClearingToken, setIsClearingToken] = useState(false);
   const [isSyncingStars, setIsSyncingStars] = useState(false);
@@ -39,6 +52,10 @@ export function useStarsWorkspace() {
   const [isLoadingRepositoryDetail, setIsLoadingRepositoryDetail] = useState(false);
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
   const [isSavingTag, setIsSavingTag] = useState(false);
+  const [isFetchingRepositoryReadme, setIsFetchingRepositoryReadme] = useState(false);
+  const [isGeneratingAiDocument, setIsGeneratingAiDocument] = useState(false);
+  const [isBatchGeneratingAiDocuments, setIsBatchGeneratingAiDocuments] = useState(false);
+  const [batchAiSummary, setBatchAiSummary] = useState<BatchAiDocumentSummary | null>(null);
   const [syncSummary, setSyncSummary] = useState<StarSyncSummary | null>(null);
   const [readmeSummary, setReadmeSummary] = useState<ReadmeFetchSummary | null>(null);
   const [repositoryPage, setRepositoryPage] = useState<RepositoryListPage | null>(null);
@@ -56,6 +73,9 @@ export function useStarsWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [annotationMessage, setAnnotationMessage] = useState<string | null>(null);
+  const [taskProgress, setTaskProgress] = useState<TaskProgressEvent | null>(null);
+  const [repositoryReadmeError, setRepositoryReadmeError] = useState<{ repositoryId: string; message: string } | null>(null);
+  const [repositoryAiError, setRepositoryAiError] = useState<{ repositoryId: string; message: string } | null>(null);
 
   const selectedRepository = useMemo(
     () => repositoryPage?.items.find((repository) => repository.id === selectedRepositoryId) ?? null,
@@ -64,16 +84,28 @@ export function useStarsWorkspace() {
   const repositoryStats = useMemo(() => getRepositoryStats(repositoryPage), [repositoryPage]);
 
   useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    void listen<TaskProgressEvent>('task-progress', (event) => {
+      setTaskProgress(event.payload);
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+
     invoke<BackendStatus>('get_backend_status')
       .then(setStatus)
       .catch((reason: unknown) => setError(toErrorMessage(reason)));
 
     invoke<GitHubAuthState>('get_github_auth_state')
       .then(setAuthState)
-      .catch((reason: unknown) => setError(toErrorMessage(reason)));
+      .catch((reason: unknown) => setError(toErrorMessage(reason)))
+      .finally(() => setIsLoadingAuth(false));
 
     loadRepositories(emptyRepositoryFilters);
     loadRepositoryLanguages();
+
+    return () => {
+      unlisten?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -101,14 +133,26 @@ export function useStarsWorkspace() {
     loadAnnotationWorkspace(selectedRepository);
   }, [selectedRepository?.id, selectedRepository?.accountId]);
 
-  async function loadRepositories(nextFilters = repositoryFilters) {
+  useEffect(() => {
+    void refreshRepositoryWorkspace();
+  }, [authState.user?.id]);
+
+  async function loadRepositories(nextFilters = repositoryFilters, accountIdOverride?: string) {
     setIsLoadingRepositories(true);
+    const accountId = accountIdOverride ?? (authState.user ? String(authState.user.id) : undefined);
+
+    if (!accountId) {
+      setRepositoryPage(emptyRepositoryPage);
+      setIsLoadingRepositories(false);
+      return;
+    }
 
     try {
       const page = await invoke<RepositoryListPage>('list_repositories', {
         request: {
-          limit: 1000,
+          limit: 5000,
           offset: 0,
+          accountId,
           keyword: optionalRequestText(nextFilters.keyword),
           language: optionalRequestText(nextFilters.language),
           tagId: optionalRequestText(nextFilters.tagId),
@@ -122,10 +166,32 @@ export function useStarsWorkspace() {
     }
   }
 
-  async function loadRepositoryLanguages() {
+  async function loadRepositoryLanguages(accountIdOverride?: string) {
     try {
-      const languages = await invoke<string[]>('list_repository_languages');
+      const accountId = accountIdOverride ?? (authState.user ? String(authState.user.id) : undefined);
+      if (!accountId) {
+        setRepositoryLanguages([]);
+        return;
+      }
+      const languages = await invoke<string[]>(
+        'list_repository_languages',
+        { request: { accountId } },
+      );
       setRepositoryLanguages(languages);
+    } catch (reason) {
+      setError(toErrorMessage(reason));
+    }
+  }
+
+  async function loadTags(accountId = authState.user ? String(authState.user.id) : undefined) {
+    try {
+      if (!accountId) {
+        setTags([]);
+        return;
+      }
+
+      const nextTags = await invoke<TagItem[]>('list_tags', { request: { accountId } });
+      setTags(nextTags);
     } catch (reason) {
       setError(toErrorMessage(reason));
     }
@@ -141,8 +207,12 @@ export function useStarsWorkspace() {
     await loadRepositories(emptyRepositoryFilters);
   }
 
-  async function refreshRepositoryWorkspace() {
-    await Promise.all([loadRepositories(repositoryFilters), loadRepositoryLanguages()]);
+  async function refreshRepositoryWorkspace(accountIdOverride?: string) {
+    await Promise.all([
+      loadRepositories(repositoryFilters, accountIdOverride),
+      loadRepositoryLanguages(accountIdOverride),
+      loadTags(accountIdOverride),
+    ]);
   }
 
   async function loadAnnotationWorkspace(repository: RepositoryListItem) {
@@ -183,6 +253,7 @@ export function useStarsWorkspace() {
       const user = await invoke<GitHubUser>('save_github_token', { token });
       setAuthState({ hasToken: true, user });
       setToken('');
+      await refreshRepositoryWorkspace(String(user.id));
       setAuthMessage('GitHub 账号已连接，可以同步 Stars。');
     } catch (reason) {
       setError(toErrorMessage(reason));
@@ -208,6 +279,7 @@ export function useStarsWorkspace() {
       const user = await invoke<GitHubUser>('save_github_token', { token: trimmed });
       setAuthState({ hasToken: true, user });
       setToken('');
+      await refreshRepositoryWorkspace(String(user.id));
       setAuthMessage('GitHub 账号已连接，可以同步 Stars。');
     } catch (reason) {
       setError(toErrorMessage(reason));
@@ -235,27 +307,41 @@ export function useStarsWorkspace() {
     }
   }
 
-  async function handleSyncStars() {
+  async function handleSyncStars(options?: { forceFull?: boolean; throwOnError?: boolean }) {
     setIsSyncingStars(true);
     setError(null);
     setAuthMessage(null);
 
     try {
-      const summary = await invoke<StarSyncSummary>('sync_github_stars');
+      const summary = await invoke<StarSyncSummary>('sync_github_stars', {
+        request: { forceFull: options?.forceFull ?? false },
+      });
       setSyncSummary(summary);
       setReadmeSummary(null);
       await refreshRepositoryWorkspace();
       setAuthMessage(
-        `同步完成：当前 ${summary.activeCount} 个，新增 ${summary.createdCount} 个，更新 ${summary.updatedCount} 个，移除 ${summary.removedCount} 个。`,
+        `同步完成：当前 ${summary.activeCount} 个，新增 ${summary.createdCount} 个，扫描 ${summary.scannedCount} 个，模式 ${summary.mode === 'incremental' ? '增量' : '全量'}。`,
       );
     } catch (reason) {
-      setError(toErrorMessage(reason));
+      const message = toErrorMessage(reason);
+      const displayMessage = `同步未完成：${message}。本地已有数据不会被删除，可检查网络或 Token 后重试。`;
+      setError(displayMessage);
+      setTaskProgress(buildFailedTaskProgress('sync-stars', 'sync', displayMessage));
+      await refreshRepositoryWorkspace();
+      if (options?.throwOnError) {
+        throw new Error(displayMessage);
+      }
     } finally {
       setIsSyncingStars(false);
     }
   }
 
-  async function handleFetchReadmes() {
+  async function handleFetchReadmes(options?: {
+    aiConfig?: AISettings;
+    autoGenerateAi?: boolean;
+    aiLimit?: number;
+    onlyMissing?: boolean;
+  }) {
     setIsFetchingReadmes(true);
     setError(null);
     setAuthMessage(null);
@@ -264,9 +350,44 @@ export function useStarsWorkspace() {
       const summary = await invoke<ReadmeFetchSummary>('fetch_repository_readmes');
       setReadmeSummary(summary);
       await refreshRepositoryWorkspace();
-      setAuthMessage(`README 已处理 ${summary.totalCount} 个仓库。`);
+      const readmeMessage = `README 已处理 ${summary.totalCount} 个仓库：更新 ${summary.fetchedCount}，跳过 ${summary.skippedCount}，缺失 ${summary.missingCount}，失败 ${summary.failedCount}。`;
+      setAuthMessage(readmeMessage);
+
+      if (options?.autoGenerateAi) {
+        const aiConfig = options.aiConfig;
+        if (!aiConfig) {
+          const message = '请先在设置中配置 AI Provider。';
+          setError(message);
+          setTaskProgress(buildFailedTaskProgress('batch-generate-ai-documents', 'ai', message));
+          setAuthMessage(`${readmeMessage} AI 分析未启动：${message}`);
+          return summary;
+        }
+
+        const aiConfigMessage = getAiConfigMessage(aiConfig);
+        if (aiConfigMessage) {
+          setError(aiConfigMessage);
+          setTaskProgress(buildFailedTaskProgress('batch-generate-ai-documents', 'ai', aiConfigMessage));
+          setAuthMessage(`${readmeMessage} AI 分析未启动：${aiConfigMessage}`);
+          return summary;
+        }
+
+        try {
+          await handleBatchGenerateAiDocuments(aiConfig, {
+            limit: options.aiLimit ?? 50,
+            onlyMissing: options.onlyMissing ?? true,
+          });
+        } catch (reason) {
+          const message = toErrorMessage(reason);
+          setAuthMessage(`${readmeMessage} AI 分析失败：${message}`);
+        }
+      }
+
+      return summary;
     } catch (reason) {
-      setError(toErrorMessage(reason));
+      const message = toErrorMessage(reason);
+      setError(message);
+      setTaskProgress(buildFailedTaskProgress('fetch-readmes', 'readme', message));
+      return null;
     } finally {
       setIsFetchingReadmes(false);
     }
@@ -276,13 +397,17 @@ export function useStarsWorkspace() {
     setIsExportingAnnotations(true);
     setError(null);
     setAuthMessage(null);
+    setTaskProgress(buildRunningTaskProgress('export-annotation-gist', 'backup', '正在导出注解到 GitHub Gist'));
 
     try {
       const summary = await invoke<GistAnnotationExportSummary>('export_annotation_gist');
       setGistIdDraft(summary.gistId);
-      setAuthMessage(`注解已导出：${summary.tagCount} 个标签，${summary.repositoryCount} 条仓库注解。`);
+      setAuthMessage(`注解已导出到 Gist ${summary.gistId}：${summary.tagCount} 个标签，${summary.repositoryCount} 条仓库注解。`);
+      setTaskProgress(buildSucceededTaskProgress('export-annotation-gist', 'backup', '注解已导出到 GitHub Gist。'));
     } catch (reason) {
-      setError(toErrorMessage(reason));
+      const message = toErrorMessage(reason);
+      setError(message);
+      setTaskProgress(buildFailedTaskProgress('export-annotation-gist', 'backup', message));
     } finally {
       setIsExportingAnnotations(false);
     }
@@ -299,6 +424,7 @@ export function useStarsWorkspace() {
     setIsImportingAnnotations(true);
     setError(null);
     setAuthMessage(null);
+    setTaskProgress(buildRunningTaskProgress('import-annotation-gist', 'backup', '正在从 GitHub Gist 导入注解'));
 
     try {
       const summary = await invoke<GistAnnotationImportSummary>('import_annotation_gist', {
@@ -311,8 +437,11 @@ export function useStarsWorkspace() {
       setAuthMessage(
         `注解已导入：${summary.tagCount} 个标签，${summary.repositoryCount} 条仓库注解，跳过 ${summary.skippedRepositoryCount} 条本地不存在的仓库。`,
       );
+      setTaskProgress(buildSucceededTaskProgress('import-annotation-gist', 'backup', '注解已从 GitHub Gist 导入。'));
     } catch (reason) {
-      setError(toErrorMessage(reason));
+      const message = toErrorMessage(reason);
+      setError(message);
+      setTaskProgress(buildFailedTaskProgress('import-annotation-gist', 'backup', message));
     } finally {
       setIsImportingAnnotations(false);
     }
@@ -337,9 +466,23 @@ export function useStarsWorkspace() {
           color: newTagColor,
         },
       });
-      setTags((currentTags) => [...currentTags, createdTag].sort((left, right) => left.name.localeCompare(right.name)));
+      const currentTagIds = new Set(annotation?.tags.map((item) => item.id) ?? []);
+      currentTagIds.add(createdTag.id);
+      const nextAnnotation = await invoke<RepositoryAnnotationView>('set_repository_tags', {
+        request: {
+          repositoryId: selectedRepository.id,
+          accountId: selectedRepository.accountId,
+          tagIds: Array.from(currentTagIds),
+        },
+      });
+      setTags((currentTags) => {
+        const withoutDuplicate = currentTags.filter((tag) => tag.id !== createdTag.id);
+        return [...withoutDuplicate, createdTag].sort((left, right) => left.name.localeCompare(right.name));
+      });
+      setAnnotation(nextAnnotation);
+      await loadRepositories(repositoryFilters);
       setNewTagName('');
-      setAnnotationMessage('标签已创建。');
+      setAnnotationMessage(`标签"${createdTag.name}"已创建并应用到当前仓库。`);
     } catch (reason) {
       setError(toErrorMessage(reason));
     } finally {
@@ -347,14 +490,14 @@ export function useStarsWorkspace() {
     }
   }
 
-  async function handleRenameTag(tag: TagItem) {
+  async function handleRenameTag(tag: TagItem, nextName: string) {
     if (!selectedRepository) {
       return;
     }
 
-    const nextName = window.prompt('输入新的标签名称', tag.name)?.trim();
+    const normalizedName = nextName.trim();
 
-    if (!nextName || nextName === tag.name) {
+    if (!normalizedName || normalizedName === tag.name) {
       return;
     }
 
@@ -367,7 +510,7 @@ export function useStarsWorkspace() {
         request: {
           accountId: selectedRepository.accountId,
           tagId: tag.id,
-          name: nextName,
+          name: normalizedName,
           color: tag.color,
         },
       });
@@ -389,7 +532,7 @@ export function useStarsWorkspace() {
   }
 
   async function handleDeleteTag(tag: TagItem) {
-    if (!selectedRepository || !window.confirm(`删除标签"${tag.name}"？已打标的项目会自动移除此标签。`)) {
+    if (!selectedRepository) {
       return;
     }
 
@@ -449,10 +592,61 @@ export function useStarsWorkspace() {
         },
       });
       setAnnotation(nextAnnotation);
-      if (repositoryFilters.tagId === tag.id) {
-        await loadRepositories(repositoryFilters);
-      }
+      await loadRepositories(repositoryFilters);
       setAnnotationMessage('仓库标签已更新。');
+    } catch (reason) {
+      setError(toErrorMessage(reason));
+    } finally {
+      setIsSavingTag(false);
+    }
+  }
+
+  async function handleApplySuggestedTag(tagName: string) {
+    if (!selectedRepository || !annotation) {
+      return;
+    }
+
+    const normalizedTagName = tagName.trim();
+    if (!normalizedTagName) {
+      return;
+    }
+
+    setIsSavingTag(true);
+    setError(null);
+    setAnnotationMessage(null);
+
+    try {
+      let targetTag = tags.find((tag) => tag.name.toLowerCase() === normalizedTagName.toLowerCase()) ?? null;
+
+      if (!targetTag) {
+        const createdTag = await invoke<TagItem>('create_tag', {
+          request: {
+            accountId: selectedRepository.accountId,
+            name: normalizedTagName,
+            color: getSuggestedTagColor(normalizedTagName),
+          },
+        });
+        targetTag = createdTag;
+        setTags((currentTags) => [...currentTags, createdTag].sort((left, right) => left.name.localeCompare(right.name)));
+      }
+
+      const currentTagIds = new Set(annotation.tags.map((item) => item.id));
+      if (currentTagIds.has(targetTag.id)) {
+        setAnnotationMessage(`标签"${targetTag.name}"已应用到当前仓库。`);
+        return;
+      }
+
+      currentTagIds.add(targetTag.id);
+      const nextAnnotation = await invoke<RepositoryAnnotationView>('set_repository_tags', {
+        request: {
+          repositoryId: selectedRepository.id,
+          accountId: selectedRepository.accountId,
+          tagIds: Array.from(currentTagIds),
+        },
+      });
+      setAnnotation(nextAnnotation);
+      await loadRepositories(repositoryFilters);
+      setAnnotationMessage(`标签"${targetTag.name}"已应用到当前仓库。`);
     } catch (reason) {
       setError(toErrorMessage(reason));
     } finally {
@@ -481,11 +675,134 @@ export function useStarsWorkspace() {
       setAnnotation(nextAnnotation);
       setNoteDraft(nextAnnotation.noteMarkdown);
       setReadingStatusDraft(nextAnnotation.readingStatus);
+      await loadRepositories(repositoryFilters);
       setAnnotationMessage('笔记和阅读状态已保存。');
     } catch (reason) {
       setError(toErrorMessage(reason));
     } finally {
       setIsSavingAnnotation(false);
+    }
+  }
+
+  async function handleFetchRepositoryReadme() {
+    if (!selectedRepository) {
+      return;
+    }
+
+    setIsFetchingRepositoryReadme(true);
+    setError(null);
+    setRepositoryReadmeError(null);
+    setAnnotationMessage(null);
+
+    try {
+      const nextRepositoryDetail = await invoke<RepositoryDetailView>('fetch_repository_readme', {
+        request: {
+          repositoryId: selectedRepository.id,
+          accountId: selectedRepository.accountId,
+        },
+      });
+      setRepositoryDetail(nextRepositoryDetail);
+      await refreshRepositoryWorkspace();
+      setRepositoryReadmeError(null);
+      setAnnotationMessage('README 已缓存。');
+    } catch (reason) {
+      const message = toErrorMessage(reason);
+      setError(message);
+      setRepositoryReadmeError({ repositoryId: selectedRepository.id, message });
+      setTaskProgress(buildFailedTaskProgress('fetch-repository-readme', 'readme', message));
+      throw reason;
+    } finally {
+      setIsFetchingRepositoryReadme(false);
+    }
+  }
+
+  async function handleGenerateAiDocument(aiConfig: AISettings) {
+    if (!selectedRepository) {
+      return;
+    }
+
+    const aiConfigMessage = getAiConfigMessage(aiConfig);
+    if (aiConfigMessage) {
+      setError(aiConfigMessage);
+      setRepositoryAiError({ repositoryId: selectedRepository.id, message: aiConfigMessage });
+      setTaskProgress(buildFailedTaskProgress('generate-ai-document', 'ai', aiConfigMessage));
+      throw new Error(aiConfigMessage);
+    }
+
+    setIsGeneratingAiDocument(true);
+    setError(null);
+    setRepositoryAiError(null);
+    setAnnotationMessage(null);
+
+    try {
+      const nextRepositoryDetail = await invoke<RepositoryDetailView>('generate_repository_ai_document', {
+        request: {
+          repositoryId: selectedRepository.id,
+          accountId: selectedRepository.accountId,
+          aiConfig: {
+            provider: aiConfig.provider,
+            baseUrl: aiConfig.baseUrl,
+            apiKey: aiConfig.apiKey,
+            model: aiConfig.model,
+          },
+        },
+      });
+      setRepositoryDetail(nextRepositoryDetail);
+      await refreshRepositoryWorkspace();
+      setRepositoryAiError(null);
+      setAnnotationMessage('AI 摘要已生成。');
+    } catch (reason) {
+      const message = toErrorMessage(reason);
+      setError(message);
+      setRepositoryAiError({ repositoryId: selectedRepository.id, message });
+      setTaskProgress(buildFailedTaskProgress('generate-ai-document', 'ai', message));
+      throw reason;
+    } finally {
+      setIsGeneratingAiDocument(false);
+    }
+  }
+
+  async function handleBatchGenerateAiDocuments(aiConfig: AISettings, options?: { limit?: number; onlyMissing?: boolean }) {
+    const aiConfigMessage = getAiConfigMessage(aiConfig);
+    if (aiConfigMessage) {
+      setError(aiConfigMessage);
+      setTaskProgress(buildFailedTaskProgress('batch-generate-ai-documents', 'ai', aiConfigMessage));
+      throw new Error(aiConfigMessage);
+    }
+
+    setIsBatchGeneratingAiDocuments(true);
+    setError(null);
+    setAuthMessage(null);
+
+    try {
+      const summary = await invoke<BatchAiDocumentSummary>('batch_generate_repository_ai_documents', {
+        request: {
+          aiConfig: {
+            provider: aiConfig.provider,
+            baseUrl: aiConfig.baseUrl,
+            apiKey: aiConfig.apiKey,
+            model: aiConfig.model,
+          },
+          limit: options?.limit ?? 50,
+          onlyMissing: options?.onlyMissing ?? true,
+        },
+      });
+      setBatchAiSummary(summary);
+      await refreshRepositoryWorkspace();
+      if (selectedRepository) {
+        await loadAnnotationWorkspace(selectedRepository);
+      }
+      setAuthMessage(
+        `AI 批量处理完成：生成 ${summary.generatedCount} 个，跳过 ${summary.skippedCount} 个，缺少 README ${summary.missingReadmeCount} 个，失败 ${summary.failedCount} 个。`,
+      );
+      return summary;
+    } catch (reason) {
+      const message = toErrorMessage(reason);
+      setError(message);
+      setTaskProgress(buildFailedTaskProgress('batch-generate-ai-documents', 'ai', message));
+      throw reason;
+    } finally {
+      setIsBatchGeneratingAiDocuments(false);
     }
   }
 
@@ -495,6 +812,7 @@ export function useStarsWorkspace() {
     applyRepositoryFilters,
     authMessage,
     authState,
+    batchAiSummary,
     connectWithToken,
     error,
     gistIdDraft,
@@ -503,6 +821,10 @@ export function useStarsWorkspace() {
     handleDeleteTag,
     handleExportAnnotations,
     handleFetchReadmes,
+    handleFetchRepositoryReadme,
+    handleBatchGenerateAiDocuments,
+    handleGenerateAiDocument,
+    handleApplySuggestedTag,
     handleImportAnnotations,
     handleRenameTag,
     handleSaveAnnotation,
@@ -512,7 +834,11 @@ export function useStarsWorkspace() {
     isClearingToken,
     isExportingAnnotations,
     isFetchingReadmes,
+    isFetchingRepositoryReadme,
+    isBatchGeneratingAiDocuments,
+    isGeneratingAiDocument,
     isImportingAnnotations,
+    isLoadingAuth,
     isLoadingAnnotation,
     isLoadingRepositories,
     isLoadingRepositoryDetail,
@@ -528,6 +854,8 @@ export function useStarsWorkspace() {
     refreshRepositoryWorkspace,
     repositoryDetail,
     repositoryFilters,
+    repositoryAiError,
+    repositoryReadmeError,
     repositoryLanguages,
     repositoryPage,
     repositoryStats,
@@ -543,10 +871,56 @@ export function useStarsWorkspace() {
     status,
     syncSummary,
     tags,
+    taskProgress,
     token,
   };
 }
 
 function toErrorMessage(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason);
+}
+
+function buildFailedTaskProgress(taskId: string, taskType: string, message: string): TaskProgressEvent {
+  return {
+    taskId,
+    taskType,
+    status: 'failed',
+    stage: 'error',
+    current: 0,
+    total: 0,
+    message,
+    repositoryName: null,
+  };
+}
+
+function buildRunningTaskProgress(taskId: string, taskType: string, message: string): TaskProgressEvent {
+  return {
+    taskId,
+    taskType,
+    status: 'running',
+    stage: 'request',
+    current: 0,
+    total: 1,
+    message,
+    repositoryName: null,
+  };
+}
+
+function buildSucceededTaskProgress(taskId: string, taskType: string, message: string): TaskProgressEvent {
+  return {
+    taskId,
+    taskType,
+    status: 'succeeded',
+    stage: 'done',
+    current: 1,
+    total: 1,
+    message,
+    repositoryName: null,
+  };
+}
+
+function getSuggestedTagColor(tagName: string) {
+  const palette = ['#2563eb', '#0f766e', '#9333ea', '#c2410c', '#16a34a', '#be123c', '#0891b2', '#7c3aed'];
+  const index = Array.from(tagName).reduce((sum, char) => sum + char.charCodeAt(0), 0) % palette.length;
+  return palette[index];
 }
