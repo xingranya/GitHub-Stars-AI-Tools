@@ -11,7 +11,7 @@ import {
   type SearchCitation,
   type SearchMatchReason,
   type SearchResult,
-} from '@stars-ai/domain';
+} from '@gsat/domain';
 
 export type SearchPort = {
   search(query: RepoQuery): Promise<SearchResult[]>;
