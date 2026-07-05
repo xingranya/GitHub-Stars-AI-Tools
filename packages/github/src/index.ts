@@ -3,7 +3,7 @@ import type {
   ReadmeDocument,
   RepositoryFacts,
   RepositoryId,
-} from '@stars-ai/domain';
+} from '@gsat/domain';
 
 export type GitHubAccountProfile = {
   accountId: GitHubAccountId;
