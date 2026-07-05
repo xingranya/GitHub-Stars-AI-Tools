@@ -191,6 +191,32 @@ export function useStarsWorkspace() {
     }
   }
 
+  /**
+   * 直接用传入的 token 连接 GitHub，绕过 React state 异步更新问题。
+   * 用于 WelcomeFlow 等需要立即用 token 调 invoke 的场景。
+   */
+  async function connectWithToken(rawToken: string) {
+    const trimmed = rawToken.trim();
+    if (!trimmed) {
+      setError('请输入 GitHub Personal Access Token');
+      return;
+    }
+    setIsSavingToken(true);
+    setError(null);
+    setAuthMessage(null);
+    try {
+      const user = await invoke<GitHubUser>('save_github_token', { token: trimmed });
+      setAuthState({ hasToken: true, user });
+      setToken('');
+      setAuthMessage('GitHub 账号已连接，可以同步 Stars。');
+    } catch (reason) {
+      setError(toErrorMessage(reason));
+      throw reason;
+    } finally {
+      setIsSavingToken(false);
+    }
+  }
+
   async function handleClearToken() {
     setIsClearingToken(true);
     setError(null);
@@ -469,6 +495,7 @@ export function useStarsWorkspace() {
     applyRepositoryFilters,
     authMessage,
     authState,
+    connectWithToken,
     error,
     gistIdDraft,
     handleClearToken,

@@ -145,7 +145,7 @@ function GitHubSettings({ workspace }: { workspace: ReturnType<typeof useWorkspa
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                void workspace.handleSaveToken(e as any);
+                void workspace.connectWithToken(workspace.token);
               }}
               className="space-y-2"
             >

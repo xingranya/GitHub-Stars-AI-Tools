@@ -49,7 +49,7 @@ export function AppLayout(props: AppLayoutProps) {
               onClick={() => props.onNavigate(item.key)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 active:scale-[0.98] group ${
                 props.currentPage === item.key
-                  ? 'bg-primary-container/30 text-on-primary-container font-semibold hover:scale-[1.02] hover:brightness-110'
+                  ? 'bg-primary/10 text-primary font-semibold'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low hover:scale-[1.02] hover:brightness-110'
               }`}
             >
@@ -80,7 +80,7 @@ export function AppLayout(props: AppLayoutProps) {
             onClick={() => props.onNavigate('settings')}
             className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm ${
               props.currentPage === 'settings'
-                ? 'bg-primary-container/30 text-on-primary-container font-semibold'
+                ? 'bg-primary/10 text-primary font-semibold'
                 : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low'
             }`}
           >
@@ -91,7 +91,7 @@ export function AppLayout(props: AppLayoutProps) {
             onClick={() => props.onNavigate('profile')}
             className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm ${
               props.currentPage === 'profile'
-                ? 'bg-primary-container/30 text-on-primary-container font-semibold'
+                ? 'bg-primary/10 text-primary font-semibold'
                 : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low'
             }`}
           >

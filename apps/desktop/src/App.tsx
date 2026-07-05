@@ -25,23 +25,13 @@ function AppContent() {
     }
   }, [settingsHook.isLoading, workspace.authState.hasToken, settingsHook.settings.general.showWelcomeOnStartup]);
 
-  // 应用品牌色
-  useEffect(() => {
-    if (settingsHook.settings.theme.brandColor) {
-      document.documentElement.style.setProperty('--color-primary', settingsHook.settings.theme.brandColor);
-    }
-  }, [settingsHook.settings.theme.brandColor]);
-
   async function handleWelcomeComplete() {
     setShowWelcome(false);
     await settingsHook.updateGeneral({ showWelcomeOnStartup: false });
   }
 
   async function handleWelcomeConnect(token: string) {
-    workspace.setToken(token);
-    const event = new Event('submit', { bubbles: true, cancelable: true }) as any;
-    event.preventDefault = () => {};
-    await workspace.handleSaveToken(event);
+    await workspace.connectWithToken(token);
   }
 
   if (showWelcome) {
