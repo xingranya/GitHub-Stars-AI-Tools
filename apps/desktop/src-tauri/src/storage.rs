@@ -1,6 +1,7 @@
 use crate::auth::GitHubUser;
 use crate::github::{ReadmeDocument, StarredRepository};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -17,6 +18,52 @@ pub struct AppStorage {
 pub struct StoredRepository {
     pub id: String,
     pub full_name: String,
+}
+
+pub struct RepositoryReconcileSummary {
+    pub active_count: usize,
+    pub created_count: usize,
+    pub updated_count: usize,
+    pub removed_count: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotationSnapshot {
+    pub schema_version: u8,
+    pub exported_at: String,
+    pub account_id: String,
+    pub tags: Vec<AnnotationSnapshotTag>,
+    pub repositories: Vec<AnnotationSnapshotRepository>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotationSnapshotTag {
+    pub name: String,
+    pub color: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotationSnapshotRepository {
+    pub repository_id: String,
+    pub full_name: String,
+    pub note_markdown: String,
+    pub read_status: String,
+    pub tag_names: Vec<String>,
+}
+
+pub struct AnnotationImportSummary {
+    pub tag_count: usize,
+    pub repository_count: usize,
+    pub skipped_repository_count: usize,
+}
+
+#[derive(Deserialize)]
+struct RepositorySyncStateRow {
+    id: String,
+    sync_status: String,
 }
 
 #[derive(Serialize)]
@@ -75,6 +122,37 @@ pub struct RepositoryAnnotationView {
     pub updated_at: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryDetailView {
+    pub repository_id: String,
+    pub account_id: String,
+    pub readme: Option<RepositoryReadmeView>,
+    pub ai_document: Option<RepositoryAiDocumentView>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryReadmeView {
+    pub raw_markdown: String,
+    pub content_hash: String,
+    pub source_path: String,
+    pub fetched_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryAiDocumentView {
+    pub summary_zh: String,
+    pub readme_zh: Option<String>,
+    pub keywords: Vec<String>,
+    pub suggested_tags: Vec<String>,
+    pub model: String,
+    pub prompt_version: String,
+    pub source_hash: String,
+    pub generated_at: String,
+}
+
 #[derive(Deserialize)]
 struct RepositoryListRow {
     id: String,
@@ -103,8 +181,37 @@ struct AnnotationRow {
 }
 
 #[derive(Deserialize)]
+struct AnnotationSnapshotRepositoryRow {
+    repository_id: String,
+    full_name: String,
+    note_markdown: String,
+    read_status: String,
+    tag_names_json: String,
+}
+
+#[derive(Deserialize)]
 struct RepositoryLanguageRow {
     language: String,
+}
+
+#[derive(Deserialize)]
+struct RepositoryReadmeRow {
+    raw_markdown: String,
+    content_hash: String,
+    source_path: String,
+    fetched_at: String,
+}
+
+#[derive(Deserialize)]
+struct RepositoryAiDocumentRow {
+    summary_zh: String,
+    readme_zh: Option<String>,
+    keywords_json: String,
+    suggested_tags_json: String,
+    model: String,
+    prompt_version: String,
+    source_hash: String,
+    generated_at: String,
 }
 
 impl AppStorage {
@@ -173,7 +280,8 @@ INSERT INTO repositories (
   updated_at
 )
 VALUES ({id}, {account_id}, {owner}, {name}, {full_name}, {description}, {language}, {topics_json}, {html_url}, {stars_count}, {forks_count}, {starred_at}, {pushed_at}, 'active', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-ON CONFLICT(account_id, full_name) DO UPDATE SET
+ON CONFLICT(id) DO UPDATE SET
+  account_id = excluded.account_id,
   owner = excluded.owner,
   name = excluded.name,
   description = excluded.description,
@@ -208,6 +316,41 @@ VALUES ({id}, {account_id});
 
         sql.push_str("COMMIT;\n");
         self.execute_sql(&sql)
+    }
+
+    pub fn reconcile_starred_repositories(
+        &self,
+        account_id: &str,
+        repositories: &[StarredRepository],
+    ) -> Result<RepositoryReconcileSummary, String> {
+        let existing_states = self.list_repository_sync_states(account_id)?;
+        let incoming_ids = repositories
+            .iter()
+            .map(|repository| repository.id.as_str())
+            .collect::<HashSet<_>>();
+        let created_count = repositories
+            .iter()
+            .filter(|repository| !existing_states.contains_key(repository.id.as_str()))
+            .count();
+        let updated_count = repositories.len().saturating_sub(created_count);
+        let removed_ids = existing_states
+            .iter()
+            .filter_map(|(repository_id, sync_status)| {
+                (sync_status == "active" && !incoming_ids.contains(repository_id.as_str()))
+                    .then(|| repository_id.to_owned())
+            })
+            .collect::<Vec<_>>();
+        let removed_count = removed_ids.len();
+
+        self.upsert_repositories(repositories)?;
+        self.mark_repositories_removed(account_id, &removed_ids)?;
+
+        Ok(RepositoryReconcileSummary {
+            active_count: repositories.len(),
+            created_count,
+            updated_count,
+            removed_count,
+        })
     }
 
     pub fn list_active_repositories(&self) -> Result<Vec<StoredRepository>, String> {
@@ -350,6 +493,21 @@ ORDER BY language COLLATE NOCASE ASC;
         )?;
 
         Ok(rows.into_iter().map(|row| row.language).collect())
+    }
+
+    pub fn get_repository_detail(
+        &self,
+        repository_id: &str,
+        account_id: &str,
+    ) -> Result<RepositoryDetailView, String> {
+        self.ensure_repository_belongs_to_account(repository_id, account_id)?;
+
+        Ok(RepositoryDetailView {
+            repository_id: repository_id.to_owned(),
+            account_id: account_id.to_owned(),
+            readme: self.get_repository_readme(repository_id)?,
+            ai_document: self.get_repository_ai_document(repository_id)?,
+        })
     }
 
     pub fn list_tags(&self, account_id: &str) -> Result<Vec<TagItem>, String> {
@@ -543,6 +701,228 @@ WHERE r.id = {repository_id} AND r.account_id = {account_id};
         self.get_repository_annotation(repository_id, account_id)
     }
 
+    pub fn export_annotation_snapshot(
+        &self,
+        account_id: &str,
+    ) -> Result<AnnotationSnapshot, String> {
+        let tags = self
+            .list_tags(account_id)?
+            .into_iter()
+            .map(|tag| AnnotationSnapshotTag {
+                name: tag.name,
+                color: tag.color,
+            })
+            .collect::<Vec<_>>();
+        let repository_sql = format!(
+            r#"
+.mode json
+SELECT
+  r.id AS repository_id,
+  r.full_name,
+  a.note_md AS note_markdown,
+  a.read_status,
+  COALESCE(json_group_array(t.name) FILTER (WHERE t.name IS NOT NULL), '[]') AS tag_names_json
+FROM annotations a
+JOIN repositories r ON r.id = a.repo_id AND r.account_id = a.account_id
+LEFT JOIN repo_tags rt ON rt.repo_id = r.id
+LEFT JOIN tags t ON t.id = rt.tag_id AND t.account_id = r.account_id
+WHERE a.account_id = {account_id}
+  AND (a.note_md != '' OR a.read_status != 'unread' OR t.id IS NOT NULL)
+GROUP BY r.id, r.full_name, a.note_md, a.read_status
+ORDER BY r.full_name COLLATE NOCASE ASC;
+"#,
+            account_id = sql_text(account_id),
+        );
+        let rows = parse_json_rows::<AnnotationSnapshotRepositoryRow>(
+            &self.query_sql(&repository_sql)?,
+            "SQLite 注解快照解析失败",
+        )?;
+        let repositories = rows
+            .into_iter()
+            .map(|row| {
+                Ok(AnnotationSnapshotRepository {
+                    repository_id: row.repository_id,
+                    full_name: row.full_name,
+                    note_markdown: row.note_markdown,
+                    read_status: row.read_status,
+                    tag_names: parse_json_string_array(
+                        &row.tag_names_json,
+                        "SQLite 注解标签快照解析失败",
+                    )?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        Ok(AnnotationSnapshot {
+            schema_version: 1,
+            exported_at: self.current_database_timestamp()?,
+            account_id: account_id.to_owned(),
+            tags,
+            repositories,
+        })
+    }
+
+    pub fn import_annotation_snapshot(
+        &self,
+        account_id: &str,
+        snapshot: &AnnotationSnapshot,
+    ) -> Result<AnnotationImportSummary, String> {
+        if snapshot.schema_version != 1 {
+            return Err("不支持的注解快照版本".to_owned());
+        }
+
+        let local_repository_ids = self.list_repository_ids(account_id)?;
+        let mut sql = String::from("PRAGMA foreign_keys = ON;\nBEGIN;\n");
+        let mut imported_repository_count = 0_usize;
+        let mut skipped_repository_count = 0_usize;
+
+        for tag in &snapshot.tags {
+            let normalized_name = normalize_required_text(&tag.name, "标签名称不能为空")?;
+            let tag_id = next_local_id("tag")?;
+            sql.push_str(&format!(
+                r#"
+INSERT INTO tags (id, account_id, name, color, updated_at)
+VALUES ({tag_id}, {account_id}, {name}, {color}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+ON CONFLICT(account_id, name) DO UPDATE SET
+  color = excluded.color,
+  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+"#,
+                tag_id = sql_text(&tag_id),
+                account_id = sql_text(account_id),
+                name = sql_text(&normalized_name),
+                color = sql_optional_text(tag.color.as_deref()),
+            ));
+        }
+
+        for repository in &snapshot.repositories {
+            if !local_repository_ids.contains(repository.repository_id.as_str()) {
+                skipped_repository_count += 1;
+                continue;
+            }
+
+            let read_status = normalize_reading_status(&repository.read_status)?;
+            imported_repository_count += 1;
+            sql.push_str(&format!(
+                r#"
+INSERT INTO annotations (repo_id, account_id, note_md, read_status, updated_at)
+VALUES ({repository_id}, {account_id}, {note_markdown}, {read_status}, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+ON CONFLICT(repo_id) DO UPDATE SET
+  note_md = excluded.note_md,
+  read_status = excluded.read_status,
+  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+
+DELETE FROM repo_tags
+WHERE repo_id = {repository_id};
+"#,
+                repository_id = sql_text(&repository.repository_id),
+                account_id = sql_text(account_id),
+                note_markdown = sql_text(&repository.note_markdown),
+                read_status = sql_text(read_status),
+            ));
+
+            for tag_name in &repository.tag_names {
+                let normalized_tag_name = normalize_required_text(tag_name, "标签名称不能为空")?;
+                sql.push_str(&format!(
+                    r#"
+INSERT OR IGNORE INTO repo_tags (repo_id, tag_id)
+SELECT {repository_id}, t.id
+FROM tags t
+WHERE t.account_id = {account_id}
+  AND t.name = {tag_name};
+"#,
+                    repository_id = sql_text(&repository.repository_id),
+                    account_id = sql_text(account_id),
+                    tag_name = sql_text(&normalized_tag_name),
+                ));
+            }
+        }
+
+        sql.push_str("COMMIT;\n");
+        self.execute_sql(&sql)?;
+
+        Ok(AnnotationImportSummary {
+            tag_count: snapshot.tags.len(),
+            repository_count: imported_repository_count,
+            skipped_repository_count,
+        })
+    }
+
+    fn list_repository_ids(&self, account_id: &str) -> Result<HashSet<String>, String> {
+        let states = self.list_repository_sync_states(account_id)?;
+
+        Ok(states.into_keys().collect())
+    }
+
+    fn current_database_timestamp(&self) -> Result<String, String> {
+        let output = self.query_sql(
+            r#"
+.mode list
+SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+"#,
+        )?;
+        let timestamp = output.trim();
+
+        if timestamp.is_empty() {
+            Err("SQLite 当前时间读取失败".to_owned())
+        } else {
+            Ok(timestamp.to_owned())
+        }
+    }
+
+    fn list_repository_sync_states(
+        &self,
+        account_id: &str,
+    ) -> Result<HashMap<String, String>, String> {
+        let sql = format!(
+            r#"
+.mode json
+SELECT id, sync_status
+FROM repositories
+WHERE account_id = {account_id};
+"#,
+            account_id = sql_text(account_id),
+        );
+        let rows = parse_json_rows::<RepositorySyncStateRow>(
+            &self.query_sql(&sql)?,
+            "SQLite 仓库同步状态解析失败",
+        )?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.id, row.sync_status))
+            .collect())
+    }
+
+    fn mark_repositories_removed(
+        &self,
+        account_id: &str,
+        repository_ids: &[String],
+    ) -> Result<(), String> {
+        if repository_ids.is_empty() {
+            return Ok(());
+        }
+
+        let repository_id_list = repository_ids
+            .iter()
+            .map(|repository_id| sql_text(repository_id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            r#"
+UPDATE repositories
+SET sync_status = 'removed',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE account_id = {account_id}
+  AND sync_status = 'active'
+  AND id IN ({repository_id_list});
+"#,
+            account_id = sql_text(account_id),
+            repository_id_list = repository_id_list,
+        );
+
+        self.execute_sql(&sql)
+    }
+
     fn get_tag(&self, account_id: &str, tag_id: &str) -> Result<TagItem, String> {
         let sql = format!(
             r#"
@@ -581,6 +961,103 @@ ORDER BY t.name COLLATE NOCASE ASC;
         );
 
         parse_json_rows(&self.query_sql(&sql)?, "SQLite 仓库标签解析失败")
+    }
+
+    fn get_repository_readme(
+        &self,
+        repository_id: &str,
+    ) -> Result<Option<RepositoryReadmeView>, String> {
+        let sql = format!(
+            r#"
+.mode json
+SELECT raw_markdown, content_hash, source_path, fetched_at
+FROM repo_readmes
+WHERE repo_id = {repository_id}
+LIMIT 1;
+"#,
+            repository_id = sql_text(repository_id),
+        );
+        let mut rows = parse_json_rows::<RepositoryReadmeRow>(
+            &self.query_sql(&sql)?,
+            "SQLite README 详情解析失败",
+        )?;
+
+        Ok(rows.pop().map(|row| RepositoryReadmeView {
+            raw_markdown: row.raw_markdown,
+            content_hash: row.content_hash,
+            source_path: row.source_path,
+            fetched_at: row.fetched_at,
+        }))
+    }
+
+    fn get_repository_ai_document(
+        &self,
+        repository_id: &str,
+    ) -> Result<Option<RepositoryAiDocumentView>, String> {
+        let sql = format!(
+            r#"
+.mode json
+SELECT
+  summary_zh,
+  readme_zh,
+  keywords_json,
+  suggested_tags_json,
+  model,
+  prompt_version,
+  source_hash,
+  generated_at
+FROM repo_ai_documents
+WHERE repo_id = {repository_id}
+LIMIT 1;
+"#,
+            repository_id = sql_text(repository_id),
+        );
+        let mut rows = parse_json_rows::<RepositoryAiDocumentRow>(
+            &self.query_sql(&sql)?,
+            "SQLite AI 文档解析失败",
+        )?;
+        let Some(row) = rows.pop() else {
+            return Ok(None);
+        };
+
+        Ok(Some(RepositoryAiDocumentView {
+            summary_zh: row.summary_zh,
+            readme_zh: row.readme_zh,
+            keywords: parse_json_string_array(&row.keywords_json, "SQLite AI 关键词解析失败")?,
+            suggested_tags: parse_json_string_array(
+                &row.suggested_tags_json,
+                "SQLite AI 推荐标签解析失败",
+            )?,
+            model: row.model,
+            prompt_version: row.prompt_version,
+            source_hash: row.source_hash,
+            generated_at: row.generated_at,
+        }))
+    }
+
+    fn ensure_repository_belongs_to_account(
+        &self,
+        repository_id: &str,
+        account_id: &str,
+    ) -> Result<(), String> {
+        let sql = format!(
+            r#"
+.mode list
+SELECT 1
+FROM repositories
+WHERE id = {repository_id} AND account_id = {account_id}
+LIMIT 1;
+"#,
+            repository_id = sql_text(repository_id),
+            account_id = sql_text(account_id),
+        );
+        let output = self.query_sql(&sql)?;
+
+        if output.trim() == "1" {
+            Ok(())
+        } else {
+            Err("仓库不存在或账号不匹配".to_owned())
+        }
     }
 
     fn ensure_repository_annotation(
@@ -731,6 +1208,10 @@ where
 
     serde_json::from_str::<Vec<T>>(normalized_output)
         .map_err(|error| format!("{error_message}：{error}"))
+}
+
+fn parse_json_string_array(value: &str, error_message: &str) -> Result<Vec<String>, String> {
+    serde_json::from_str::<Vec<String>>(value).map_err(|error| format!("{error_message}：{error}"))
 }
 
 fn next_local_id(prefix: &str) -> Result<String, String> {

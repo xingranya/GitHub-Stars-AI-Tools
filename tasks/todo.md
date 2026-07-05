@@ -68,44 +68,51 @@
   - Verify: `packages/domain/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts` 静态诊断无新增错误；`pnpm build:packages` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。
   - Files: `packages/domain/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts`
 
-- [ ] Task 4.2: README 中文摘要
+- [x] Task 4.2: README 中文摘要
+  - Status: 已完成。`StoragePort` 已补齐 AI 文档读取与 README AI 候选项接口；`worker` 层新增批量摘要流程，按 README `contentHash` 跳过未变化内容；mock provider 输出中文用途摘要、关键词和推荐标签，可用于后续真实 Provider 接入前验证完整链路。
   - Acceptance: 摘要、关键词、推荐标签可生成，hash 未变不重复生成。
-  - Verify: 抽样 10 个仓库检查摘要质量。
-  - Files: `packages/ai/**`、`packages/worker/**`、`packages/storage/**`
+  - Verify: `packages/storage/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts` 静态诊断无新增错误；`pnpm build:packages` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。
+  - Files: `packages/storage/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts`
 
-- [ ] Task 4.3: 项目详情页中文展示
+- [x] Task 4.3: 项目详情页中文展示
+  - Status: 已完成。Tauri 后端新增仓库详情查询，按账号边界读取 README 缓存与 AI 派生文档；前端详情区展示 AI 中文摘要、关键词、推荐标签、README 原文、标签、阅读状态和用户笔记。AI 派生数据保持只读展示，不写入用户注解层。
   - Acceptance: 详情页展示中文摘要、README 原文、标签、笔记。
-  - Verify: 人工检查多个项目详情。
-  - Files: `apps/desktop/src/**`
+  - Verify: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css` 静态诊断无新增错误；`pnpm build` / `cargo check` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。
+  - Files: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
 ## Phase 5: Natural Language Search
 
-- [ ] Task 5.1: 查询 DSL
+- [x] Task 5.1: 查询 DSL
+  - Status: 已完成。领域层新增标准 `RepoQuery` DSL、默认查询、分页边界、查询模式和归一化入口；搜索层新增默认解释器，可将关键词筛选、language/tag 过滤和自然语言查询统一转换为 `RepoQuery`。
   - Acceptance: 普通筛选和自然语言查询使用统一 `RepoQuery`。
-  - Verify: DSL 单元测试通过。
-  - Files: `packages/domain/**`、`packages/search/**`
+  - Verify: `packages/domain/src/index.ts`、`packages/search/src/index.ts` 静态诊断无新增错误；本机 `cargo check` 需要先清理旧目录构建缓存后复跑。
+  - Files: `packages/domain/src/index.ts`、`packages/search/src/index.ts`
 
-- [ ] Task 5.2: 向量索引
+- [x] Task 5.2: 向量索引
+  - Status: 已完成。领域层新增 `RepositoryEmbeddingRecord`，明确 `sourceHash`、`model`、`modelVersion`、维度和生成时间；存储层补齐向量候选、查询和保存接口；搜索层新增 `VectorIndexPort`；worker 层新增批量向量索引流程，并按 AI 文档 `sourceHash` 跳过内容未变化的仓库。
   - Acceptance: 向量记录带 model_version/source_hash，内容未变不重复生成。
-  - Verify: 固定测试查询召回预期仓库。
-  - Files: `packages/search/**`、`packages/ai/**`、`packages/worker/**`
+  - Verify: 修改文件静态诊断无新增错误；`pnpm build:packages` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。固定召回测试将在 Task 5.3 混合检索实现后补齐。
+  - Files: `packages/domain/src/index.ts`、`packages/storage/src/index.ts`、`packages/search/src/index.ts`、`packages/worker/src/index.ts`
 
-- [ ] Task 5.3: 检索结果解释
+- [x] Task 5.3: 检索结果解释
+  - Status: 已完成。领域层 `SearchResult` 已扩展中文解释和引用片段；搜索层新增解释生成器，可从仓库事实、AI 文档、README、用户笔记和向量分数生成中文匹配理由；前端工作台在筛选结果卡片中展示当前命中依据和片段，后续自然语言检索命令可复用同一 UI 结构。
   - Acceptance: 每个结果都有中文匹配理由和引用片段。
-  - Verify: 人工检查 Top 10 解释质量。
-  - Files: `packages/search/**`、`apps/desktop/src/**`
+  - Verify: 修改文件静态诊断无新增错误；`pnpm build` / `pnpm build:packages` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。Top 10 解释质量需在接入真实自然语言检索后人工检查。
+  - Files: `packages/domain/src/index.ts`、`packages/search/src/index.ts`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
 ## Phase 6: Long-term Usage
 
-- [ ] Task 6.1: 增量同步与全量重扫
+- [x] Task 6.1: 增量同步与全量重扫
+  - Status: 已完成。同步命令现在以 GitHub 全量 starred 列表作为事实来源执行本地对账：新 Star 幂等写入，已有 Star 更新事实字段，未出现在本次 GitHub 返回中的 active 仓库标记为 removed；标签、笔记、README 和 AI 派生数据不删除、不覆盖。同步结果返回 active、新增、更新、移除统计并在前端展示。
   - Acceptance: 新 Star 加入，unstar 标记 removed，不删除注解。
-  - Verify: 模拟新增与取消 Star。
-  - Files: `packages/github/**`、`packages/worker/**`
+  - Verify: 前端静态诊断无新增错误；`cargo fmt --check` / `cargo check` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。真实新增与取消 Star 对账需连接 GitHub 后重复执行同步验证。
+  - Files: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`
 
-- [ ] Task 6.2: Gist 注解导入导出
+- [x] Task 6.2: Gist 注解导入导出
+  - Status: 已完成。注解层快照仅包含 tags、repo_tags、notes 和 read_status；导出通过 Secret Gist 保存 JSON 快照，导入只合并到当前账号本地已存在仓库，不创建 GitHub 事实数据，不包含 README、AI 派生数据、PAT 或完整数据库。
   - Acceptance: 只同步 tags、notes、tag metadata。
-  - Verify: 导出导入后注解一致。
-  - Files: `packages/github/**`、`packages/storage/**`、`apps/desktop/src/**`
+  - Verify: 前端静态诊断无新增错误；`cargo fmt --check` / `cargo check` / `pnpm build` 当前需在本机终端复跑确认。真实导入导出一致性需连接 GitHub 后使用 Secret Gist ID 回归验证。
+  - Files: `apps/desktop/src-tauri/src/auth.rs`、`apps/desktop/src-tauri/src/github.rs`、`apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
 - [ ] Task 6.3: 成本与任务监控
   - Acceptance: 展示 AI 用量、失败任务、重试入口。

@@ -88,13 +88,14 @@ export function createMockAiProvider(options: MockAiProviderOptions = {}): AiPro
     async summarizeReadme(input) {
       const summarySource = firstReadableParagraph(input.readme.rawMarkdown) ?? input.repository.description ?? input.repository.fullName;
       const keywords = extractRepositoryKeywords(input.repository, input.readme.rawMarkdown);
+      const suggestedTags = suggestRepositoryTags(input.repository, keywords);
 
       return {
         repoId: input.repository.id,
-        summaryZh: `这是 ${input.repository.fullName} 的本地 mock 摘要：${summarySource}`,
+        summaryZh: buildMockSummary(input.repository, summarySource, keywords),
         readmeZh: null,
         keywords,
-        suggestedTags: keywords.slice(0, 5),
+        suggestedTags,
         model,
         promptVersion: input.promptVersion,
         sourceHash: input.readme.contentHash,
@@ -144,6 +145,42 @@ export function createMockAiProvider(options: MockAiProviderOptions = {}): AiPro
   };
 }
 
+const commonStopWords = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'from',
+  'that',
+  'this',
+  'you',
+  'your',
+  'are',
+  'can',
+  'use',
+  'using',
+  'install',
+  'readme',
+  'github',
+]);
+
+function buildMockSummary(repository: RepositoryFacts, summarySource: string, keywords: string[]) {
+  const languagePart = repository.language ? `主要语言是 ${repository.language}` : '主要语言暂未标注';
+  const topicPart = repository.topics.length > 0 ? `已标注 Topics：${repository.topics.slice(0, 5).join('、')}` : '暂无 GitHub Topics';
+  const keywordPart = keywords.length > 0 ? `关键词：${keywords.slice(0, 6).join('、')}` : '关键词待补充';
+
+  return `${repository.fullName} 适合用于理解或复用该项目能力。${languagePart}，${topicPart}。README 重点信息：${summarySource}。${keywordPart}。`;
+}
+
+function suggestRepositoryTags(repository: RepositoryFacts, keywords: string[]) {
+  const candidates = [repository.language, ...repository.topics, ...keywords]
+    .filter((item): item is string => Boolean(item))
+    .map((item) => item.toLowerCase())
+    .filter((item) => !commonStopWords.has(item));
+
+  return Array.from(new Set(candidates)).slice(0, 6);
+}
+
 function firstReadableParagraph(markdown: string) {
   return markdown
     .split(/\n{2,}/u)
@@ -160,7 +197,9 @@ function extractRepositoryKeywords(repository: RepositoryFacts, readmeMarkdown: 
     ...tokenize(readmeMarkdown),
   ].filter((item): item is string => Boolean(item));
 
-  return Array.from(new Set(candidates.map((item) => item.toLowerCase()))).slice(0, 12);
+  return Array.from(new Set(candidates.map((item) => item.toLowerCase())))
+    .filter((item) => item.length >= 2 && !commonStopWords.has(item))
+    .slice(0, 12);
 }
 
 function inferLanguages(tokens: string[]) {

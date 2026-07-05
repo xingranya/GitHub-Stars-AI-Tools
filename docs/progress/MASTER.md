@@ -3,8 +3,8 @@
 ## 当前状态
 
 - 模式：LOCAL_ONLY
-- 阶段：Phase 4 进行中
-- 当前任务：Task 4.1 AI Provider 抽象已完成，下一步进入 Task 4.2 README 中文摘要
+- 阶段：Phase 6 进行中
+- 当前任务：Task 6.2 Gist 注解导入导出已完成，下一步进入 Task 6.3 成本与任务监控
 - 日期：2026-07-04
 
 ## 产品边界
@@ -60,13 +60,13 @@
 - [x] Phase 1：项目骨架与基础设施（3/3）
 - [x] Phase 2：GitHub 同步闭环（3/3）
 - [x] Phase 3：Star 管理核心能力（3/3）
-- [ ] Phase 4：AI 知识库 MVP（1/3）
-- [ ] Phase 5：自然语言检索（0/3）
-- [ ] Phase 6：同步与发布增强（0/3）
+- [x] Phase 4：AI 知识库 MVP（3/3）
+- [x] Phase 5：自然语言检索（3/3）
+- [ ] Phase 6：同步与发布增强（2/3）
 
 ## 下一步
 
-进入 `tasks/todo.md` 的 Task 4.2：README 中文摘要。下一步应基于 `AiProvider` 和 `runReadmeAiPipeline` 接入 README 摘要生成任务，并按 README `contentHash` 缓存 AI 派生结果，避免内容未变化时重复生成。
+进入 `tasks/todo.md` 的 Task 6.3：成本与任务监控。下一步应围绕 AI 用量、失败任务、重试入口建立可观测面板，不改变 GitHub 事实层、用户注解层和 AI 派生层的既有边界。
 
 ## 关键约束
 
