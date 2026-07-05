@@ -1,6 +1,7 @@
-import { Brain, Database, HardDrive, UserRound } from 'lucide-react';
+import { Brain, Database, HardDrive, UserRound, Settings } from 'lucide-react';
 import { PropsWithChildren, ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type { BackendStatus, GitHubAuthState, RepositoryStats } from '@/types';
 
 type AppShellProps = {
@@ -13,6 +14,7 @@ type AppShellProps = {
   sidebar: ReactNode;
   status: BackendStatus | null;
   toolbar: ReactNode;
+  onOpenSettings: () => void;
 };
 
 export function AppShell(props: AppShellProps) {
@@ -37,6 +39,15 @@ export function AppShell(props: AppShellProps) {
               label={props.authState.user ? `@${props.authState.user.login}` : '未连接'}
               variant={props.authState.user ? 'default' : 'outline'}
             />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8 rounded-lg"
+              onClick={props.onOpenSettings}
+              title="设置"
+            >
+              <Settings className="size-4" />
+            </Button>
           </div>
         </div>
         <div className="border-t bg-muted/30 px-6 py-3">{props.toolbar}</div>

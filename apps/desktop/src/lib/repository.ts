@@ -57,7 +57,7 @@ export function buildRepositorySearchExplanation(
 
     reasons.push({
       label: '关键词命中',
-      detail: `当前结果与“${keyword}”相关。`,
+      detail: `当前结果与"${keyword}"相关。`,
     });
 
     if (matchedText) {
@@ -79,7 +79,7 @@ export function buildRepositorySearchExplanation(
     const tagName = tags.find((tag) => tag.id === filters.tagId)?.name ?? '当前标签';
     reasons.push({
       label: '标签命中',
-      detail: `项目已归入“${tagName}”。`,
+      detail: `项目已归入"${tagName}"。`,
     });
   }
 
