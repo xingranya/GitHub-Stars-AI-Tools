@@ -1,4 +1,4 @@
-# 任务拆解：GitHub Stars AI Tools
+# 任务拆解：GitHub-Stars-AI-Tools
 
 ## 阶段 0：规格冻结
 

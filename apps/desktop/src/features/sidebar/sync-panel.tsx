@@ -56,12 +56,14 @@ export function SyncPanel(props: SyncPanelProps) {
       </form>
       {props.syncSummary ? (
         <p className="text-xs leading-relaxed text-muted-foreground">
-          <strong className="font-medium text-foreground">Stars 同步：</strong>当前 {props.syncSummary.activeCount}，新增 {props.syncSummary.createdCount}，更新 {props.syncSummary.updatedCount}
+          <strong className="font-medium text-foreground">Stars 同步：</strong>当前 {props.syncSummary.activeCount}，新增 {props.syncSummary.createdCount}，扫描 {props.syncSummary.scannedCount}，
+          {props.syncSummary.mode === 'incremental' ? '增量' : '全量'}
         </p>
       ) : null}
       {props.readmeSummary ? (
         <p className="text-xs leading-relaxed text-muted-foreground">
-          <strong className="font-medium text-foreground">README 抓取：</strong>更新 {props.readmeSummary.fetchedCount}，跳过 {props.readmeSummary.skippedCount}，缺失 {props.readmeSummary.missingCount}
+          <strong className="font-medium text-foreground">README 抓取：</strong>更新 {props.readmeSummary.fetchedCount}，跳过 {props.readmeSummary.skippedCount}，缺失 {props.readmeSummary.missingCount}，失败{' '}
+          {props.readmeSummary.failedCount}
         </p>
       ) : null}
     </section>
