@@ -5,8 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { COLOR_PRESETS } from '@/types/settings';
-import type { AppSettings } from '@/types/settings';
+import { COLOR_PRESETS } from '@/types-settings';
+import type { AppSettings } from '@/types-settings';
 
 type SettingsPanelProps = {
   isOpen: boolean;

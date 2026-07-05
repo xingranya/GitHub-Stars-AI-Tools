@@ -363,7 +363,7 @@ export function useStarsWorkspace() {
   }
 
   async function handleDeleteTag(tag: TagItem) {
-    if (!selectedRepository || !window.confirm(`删除标签“${tag.name}”？已打标的项目会自动移除此标签。`)) {
+    if (!selectedRepository || !window.confirm(`删除标签"${tag.name}"？已打标的项目会自动移除此标签。`)) {
       return;
     }
 

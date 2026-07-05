@@ -181,52 +181,52 @@ function RepositoryKnowledgeSummary(props: { detail: RepositoryDetailView | null
   const readme = props.detail?.readme ?? null;
 
   return (
-    <section className=”grid gap-4 rounded-xl border bg-card p-5 shadow-sm”>
-      <div className=”flex items-center justify-between gap-3”>
-        <strong className=”inline-flex items-center gap-2 text-sm font-semibold”>
-          <Sparkles className=”size-4 text-primary” />
+    <section className="grid gap-4 rounded-xl border bg-card p-5 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <strong className="inline-flex items-center gap-2 text-sm font-semibold">
+          <Sparkles className="size-4 text-primary" />
           AI 摘要
         </strong>
-        {aiDocument ? <span className=”rounded-lg bg-primary/10 px-2 py-1 text-xs font-medium text-primary”>{aiDocument.model}</span> : null}
+        {aiDocument ? <span className="rounded-lg bg-primary/10 px-2 py-1 text-xs font-medium text-primary">{aiDocument.model}</span> : null}
       </div>
       {aiDocument ? (
         <>
-          <p className=”text-sm leading-relaxed text-foreground”>{aiDocument.summaryZh}</p>
+          <p className="text-sm leading-relaxed text-foreground">{aiDocument.summaryZh}</p>
           {aiDocument.keywords.length > 0 ? (
-            <div className=”flex flex-wrap gap-1.5”>
+            <div className="flex flex-wrap gap-1.5">
               {aiDocument.keywords.map((keyword) => (
-                <Badge key={keyword} variant=”secondary” className=”rounded-lg font-normal shadow-sm”>{keyword}</Badge>
+                <Badge key={keyword} variant="secondary" className="rounded-lg font-normal shadow-sm">{keyword}</Badge>
               ))}
             </div>
           ) : null}
           {aiDocument.suggestedTags.length > 0 ? (
-            <div className=”grid gap-2”>
-              <span className=”text-xs font-semibold”>推荐标签</span>
-              <div className=”flex flex-wrap gap-1.5”>
+            <div className="grid gap-2">
+              <span className="text-xs font-semibold">推荐标签</span>
+              <div className="flex flex-wrap gap-1.5">
                 {aiDocument.suggestedTags.map((tag) => (
-                  <Badge key={tag} variant=”outline” className=”rounded-lg font-normal shadow-sm”>{tag}</Badge>
+                  <Badge key={tag} variant="outline" className="rounded-lg font-normal shadow-sm">{tag}</Badge>
                 ))}
               </div>
             </div>
           ) : null}
-          <p className=”text-xs text-muted-foreground”>生成于 {formatDate(aiDocument.generatedAt)}</p>
+          <p className="text-xs text-muted-foreground">生成于 {formatDate(aiDocument.generatedAt)}</p>
         </>
       ) : (
-        <p className=”text-sm text-muted-foreground leading-relaxed”>还没有中文摘要。生成后会显示用途说明、关键词和推荐标签。</p>
+        <p className="text-sm text-muted-foreground leading-relaxed">还没有中文摘要。生成后会显示用途说明、关键词和推荐标签。</p>
       )}
 
-      <details className=”border-t pt-4”>
-        <summary className=”inline-flex cursor-pointer items-center gap-2 text-sm font-semibold transition-colors hover:text-primary”>
-          <BookOpen className=”size-4” />
+      <details className="border-t pt-4">
+        <summary className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold transition-colors hover:text-primary">
+          <BookOpen className="size-4" />
           README 原文
         </summary>
         {readme ? (
-          <div className=”mt-3 grid gap-3”>
-            <p className=”text-xs text-muted-foreground”>来源：{readme.sourcePath} · 抓取于 {formatDate(readme.fetchedAt)}</p>
-            <pre className=”max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-4 text-xs leading-relaxed shadow-inner”>{readme.rawMarkdown.slice(0, 8000)}</pre>
+          <div className="mt-3 grid gap-3">
+            <p className="text-xs text-muted-foreground">来源：{readme.sourcePath} · 抓取于 {formatDate(readme.fetchedAt)}</p>
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-4 text-xs leading-relaxed shadow-inner">{readme.rawMarkdown.slice(0, 8000)}</pre>
           </div>
         ) : (
-          <p className=”mt-3 text-sm text-muted-foreground leading-relaxed”>还没有缓存 README。请在左侧面板执行”抓取 README”。</p>
+          <p className="mt-3 text-sm text-muted-foreground leading-relaxed">还没有缓存 README。请在左侧面板执行"抓取 README"。</p>
         )}
       </details>
     </section>
