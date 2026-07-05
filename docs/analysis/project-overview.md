@@ -1,4 +1,4 @@
-# 项目分析：GitHub Stars AI Tools
+# 项目分析：GitHub-Stars-AI-Tools
 
 ## 目标
 

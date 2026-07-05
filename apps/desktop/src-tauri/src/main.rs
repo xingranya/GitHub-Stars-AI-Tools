@@ -1,3 +1,3 @@
 fn main() {
-    stars_ai_desktop_lib::run();
+    gsat_desktop_lib::run();
 }
