@@ -1,4 +1,4 @@
-# 架构规格：GitHub Stars AI Tools
+# 架构规格：GitHub-Stars-AI-Tools
 
 ## 架构原则
 

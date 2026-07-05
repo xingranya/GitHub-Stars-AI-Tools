@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-基于 Stitch 设计系统，将 GitHub Stars AI Tools 从当前 UI 完全重构为具有毛玻璃效果的现代桌面应用。
+基于 Stitch 设计系统，将 GitHub-Stars-AI-Tools 从当前 UI 完全重构为具有毛玻璃效果的现代桌面应用。
 
 **当前状态**: 已完成设计系统 CSS，已下载所有 Stitch 页面。
 

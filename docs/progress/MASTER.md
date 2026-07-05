@@ -1,4 +1,4 @@
-# MASTER：GitHub Stars AI Tools
+# MASTER：GitHub-Stars-AI-Tools
 
 ## 当前状态
 

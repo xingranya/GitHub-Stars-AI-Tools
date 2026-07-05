@@ -1,4 +1,4 @@
-# 产品规格：GitHub Stars AI Tools
+# 产品规格：GitHub-Stars-AI-Tools
 
 ## 产品定位
 
