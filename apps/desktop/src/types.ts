@@ -143,3 +143,5 @@ export type RepositorySearchExplanationView = {
   reasons: SearchMatchReasonView[];
   citations: SearchCitationView[];
 };
+export type { AppSettings, ThemeSettings, SyncSettings, AISettings, GeneralSettings } from './types-settings';
+export { DEFAULT_SETTINGS, COLOR_PRESETS } from './types-settings';
