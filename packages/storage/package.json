@@ -1,5 +1,5 @@
 {
-  "name": "@stars-ai/storage",
+  "name": "@gsat/storage",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,6 +16,6 @@
     "verify:migrations": "node scripts/verify-migrations.mjs"
   },
   "dependencies": {
-    "@stars-ai/domain": "workspace:*"
+    "@gsat/domain": "workspace:*"
   }
 }

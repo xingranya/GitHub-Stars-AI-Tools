@@ -1,5 +1,5 @@
 {
-  "name": "@stars-ai/worker",
+  "name": "@gsat/worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,10 +15,10 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@stars-ai/ai": "workspace:*",
-    "@stars-ai/domain": "workspace:*",
-    "@stars-ai/github": "workspace:*",
-    "@stars-ai/search": "workspace:*",
-    "@stars-ai/storage": "workspace:*"
+    "@gsat/ai": "workspace:*",
+    "@gsat/domain": "workspace:*",
+    "@gsat/github": "workspace:*",
+    "@gsat/search": "workspace:*",
+    "@gsat/storage": "workspace:*"
   }
 }

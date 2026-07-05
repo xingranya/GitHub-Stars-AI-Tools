@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS repositories (
 );
 
 CREATE INDEX IF NOT EXISTS idx_repositories_account ON repositories(account_id);
+CREATE INDEX IF NOT EXISTS idx_repositories_account_status_starred ON repositories(account_id, sync_status, starred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_repositories_account_language_status ON repositories(account_id, language, sync_status);
 CREATE INDEX IF NOT EXISTS idx_repositories_language ON repositories(language);
 CREATE INDEX IF NOT EXISTS idx_repositories_starred_at ON repositories(starred_at);
 CREATE INDEX IF NOT EXISTS idx_repositories_sync_status ON repositories(sync_status);
@@ -67,6 +69,22 @@ CREATE TABLE IF NOT EXISTS repo_ai_documents (
 
 CREATE INDEX IF NOT EXISTS idx_repo_ai_documents_source_hash ON repo_ai_documents(source_hash);
 
+CREATE TABLE IF NOT EXISTS repo_embeddings (
+  repo_id TEXT NOT NULL,
+  source_kind TEXT NOT NULL CHECK (source_kind IN ('repository_knowledge')),
+  source_hash TEXT NOT NULL,
+  model TEXT NOT NULL,
+  model_version TEXT NOT NULL,
+  dimensions INTEGER NOT NULL,
+  vector_json TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  PRIMARY KEY (repo_id, source_kind, model, model_version),
+  FOREIGN KEY (repo_id) REFERENCES repositories(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_repo_embeddings_model ON repo_embeddings(model, model_version);
+CREATE INDEX IF NOT EXISTS idx_repo_embeddings_source_hash ON repo_embeddings(source_hash);
+
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
@@ -89,6 +107,8 @@ CREATE TABLE IF NOT EXISTS repo_tags (
   FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS idx_repo_tags_tag_repo ON repo_tags(tag_id, repo_id);
+
 CREATE TABLE IF NOT EXISTS annotations (
   repo_id TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
@@ -101,6 +121,7 @@ CREATE TABLE IF NOT EXISTS annotations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_annotations_account ON annotations(account_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_account_repo ON annotations(account_id, repo_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_read_status ON annotations(read_status);
 
 CREATE TABLE IF NOT EXISTS jobs (
@@ -119,17 +140,6 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_account_status ON jobs(account_id, status);
 CREATE INDEX IF NOT EXISTS idx_jobs_type_status ON jobs(type, status);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS repository_fts USING fts5(
-  repo_id UNINDEXED,
-  full_name,
-  description,
-  language,
-  topics,
-  summary_zh,
-  note_md,
-  tokenize = 'unicode61'
-);
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES ('001', 'initial_schema');
