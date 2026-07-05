@@ -323,6 +323,23 @@ body {
   /* 暗黑模式变量可以在这里定义 */
 }
 
+/* === 全局布局 === */
+
+.app-layout {
+  min-height: 100vh;
+  background: var(--background);
+  position: relative;
+}
+
+.main-container {
+  min-height: 100vh;
+}
+
+.content-area {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
 /* === 减少动画（无障碍） === */
 
 @media (prefers-reduced-motion: reduce) {

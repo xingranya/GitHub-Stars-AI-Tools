@@ -1,20 +1,21 @@
 import { useState, useEffect } from 'react';
-import { AppShell } from '@/components/app-shell';
-import { SettingsPanel } from '@/components/settings-panel';
+import { AppLayout } from '@/components/app-layout';
+import { DashboardPage } from '@/pages/dashboard';
+import { RepositoriesPage } from '@/pages/repositories';
+import { TagNetworkPage } from '@/pages/tag-network';
+import { AISearchPage } from '@/pages/ai-search';
+import { ProfilePage } from '@/pages/profile';
+import { SettingsPage } from '@/pages/settings';
 import { WelcomeFlow } from '@/components/welcome-flow';
-import { KnowledgePanel } from '@/features/knowledge/knowledge-panel';
-import { RepositoryFilterBar } from '@/features/repositories/repository-filter-bar';
-import { RepositoryTable } from '@/features/repositories/repository-table';
-import { ConnectionPanel } from '@/features/sidebar/connection-panel';
-import { SyncPanel } from '@/features/sidebar/sync-panel';
-import { SystemPanel } from '@/features/sidebar/system-panel';
 import { useStarsWorkspace } from '@/hooks/use-stars-workspace';
 import { useSettings } from '@/hooks/use-settings';
+
+type Page = 'dashboard' | 'repositories' | 'tag-network' | 'ai-search' | 'profile' | 'settings';
 
 export function App() {
   const workspace = useStarsWorkspace();
   const settingsHook = useSettings();
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [showWelcome, setShowWelcome] = useState(false);
 
   // 检查是否需要显示欢迎流程
@@ -53,102 +54,33 @@ export function App() {
     );
   }
 
+  // 渲染当前页面
+  function renderPage() {
+    switch (currentPage) {
+      case 'dashboard':
+        return <DashboardPage />;
+      case 'repositories':
+        return <RepositoriesPage />;
+      case 'tag-network':
+        return <TagNetworkPage />;
+      case 'ai-search':
+        return <AISearchPage />;
+      case 'profile':
+        return <ProfilePage />;
+      case 'settings':
+        return <SettingsPage />;
+      default:
+        return <DashboardPage />;
+    }
+  }
+
   return (
-    <>
-      <AppShell
-        authState={workspace.authState}
-        error={workspace.error}
-        message={workspace.authMessage}
-        repositoryStats={workspace.repositoryStats}
-        status={workspace.status}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        toolbar={
-          <RepositoryFilterBar
-            filters={workspace.repositoryFilters}
-            isLoading={workspace.isLoadingRepositories}
-            languages={workspace.repositoryLanguages}
-            tags={workspace.tags}
-            onApplyFilters={workspace.applyRepositoryFilters}
-            onResetFilters={workspace.resetRepositoryFilters}
-          />
-        }
-        sidebar={
-          <>
-            <ConnectionPanel
-              authState={workspace.authState}
-              isClearingToken={workspace.isClearingToken}
-              isSavingToken={workspace.isSavingToken}
-              token={workspace.token}
-              onClearToken={workspace.handleClearToken}
-              onSaveToken={workspace.handleSaveToken}
-              onSetToken={workspace.setToken}
-            />
-            <SyncPanel
-              authState={workspace.authState}
-              gistIdDraft={workspace.gistIdDraft}
-              isExportingAnnotations={workspace.isExportingAnnotations}
-              isFetchingReadmes={workspace.isFetchingReadmes}
-              isImportingAnnotations={workspace.isImportingAnnotations}
-              isSyncingStars={workspace.isSyncingStars}
-              readmeSummary={workspace.readmeSummary}
-              syncSummary={workspace.syncSummary}
-              onExportAnnotations={workspace.handleExportAnnotations}
-              onFetchReadmes={workspace.handleFetchReadmes}
-              onImportAnnotations={workspace.handleImportAnnotations}
-              onSetGistIdDraft={workspace.setGistIdDraft}
-              onSyncStars={workspace.handleSyncStars}
-            />
-            <SystemPanel status={workspace.status} stats={workspace.repositoryStats} />
-          </>
-        }
-        content={
-          <RepositoryTable
-            filters={workspace.repositoryFilters}
-            isLoading={workspace.isLoadingRepositories}
-            page={workspace.repositoryPage}
-            selectedRepository={workspace.selectedRepository}
-            tags={workspace.tags}
-            onRefresh={workspace.refreshRepositoryWorkspace}
-            onSelectRepository={workspace.setSelectedRepositoryId}
-          />
-        }
-        detail={
-          <KnowledgePanel
-            annotation={workspace.annotation}
-            annotationMessage={workspace.annotationMessage}
-            isLoadingAnnotation={workspace.isLoadingAnnotation}
-            isLoadingRepositoryDetail={workspace.isLoadingRepositoryDetail}
-            isSavingAnnotation={workspace.isSavingAnnotation}
-            isSavingTag={workspace.isSavingTag}
-            newTagColor={workspace.newTagColor}
-            newTagName={workspace.newTagName}
-            noteDraft={workspace.noteDraft}
-            readingStatusDraft={workspace.readingStatusDraft}
-            repository={workspace.selectedRepository}
-            repositoryDetail={workspace.repositoryDetail}
-            tags={workspace.tags}
-            onCreateTag={workspace.handleCreateTag}
-            onDeleteTag={workspace.handleDeleteTag}
-            onRenameTag={workspace.handleRenameTag}
-            onSaveAnnotation={workspace.handleSaveAnnotation}
-            onSetNewTagColor={workspace.setNewTagColor}
-            onSetNewTagName={workspace.setNewTagName}
-            onSetNoteDraft={workspace.setNoteDraft}
-            onSetReadingStatusDraft={workspace.setReadingStatusDraft}
-            onToggleRepositoryTag={workspace.handleToggleRepositoryTag}
-          />
-        }
-      />
-      <SettingsPanel
-        isOpen={isSettingsOpen}
-        settings={settingsHook.settings}
-        onClose={() => setIsSettingsOpen(false)}
-        onUpdateTheme={settingsHook.updateTheme}
-        onUpdateSync={settingsHook.updateSync}
-        onUpdateAI={settingsHook.updateAI}
-        onUpdateGeneral={settingsHook.updateGeneral}
-        onResetSettings={settingsHook.resetSettings}
-      />
-    </>
+    <AppLayout
+      currentPage={currentPage}
+      onNavigate={setCurrentPage}
+      user={workspace.authState.user}
+    >
+      {renderPage()}
+    </AppLayout>
   );
 }
