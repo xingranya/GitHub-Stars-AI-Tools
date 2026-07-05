@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import {
   Chart as ChartJS,
   RadialLinearScale,
@@ -14,6 +15,7 @@ import { Radar, Line } from 'react-chartjs-2';
 import { useWorkspace } from '@/providers/workspace-provider';
 import { Icon } from '@/components/ui/icon';
 import { compactNumber } from '@/lib/format';
+import type { ProfileStats, RepositoryListItem } from '@/types';
 
 ChartJS.register(
   RadialLinearScale,
@@ -42,73 +44,54 @@ const LANGUAGE_COLORS: Record<string, string> = {
   'C++': '#f34b7d',
 };
 
-export function ProfilePage() {
+type ProfilePageProps = {
+  onOpenRepository: (repository: RepositoryListItem) => void;
+};
+
+const EMPTY_PROFILE_STATS: ProfileStats = {
+  totalStars: 0,
+  totalNotes: 0,
+  totalAiWords: 0,
+  languageBreakdown: [],
+  monthlyTrend: [],
+  recentRepos: [],
+};
+
+export function ProfilePage(props: ProfilePageProps) {
   const workspace = useWorkspace();
-
-  // 从仓库数据派生统计
-  const stats = useMemo(() => {
-    if (!workspace.repositoryPage) {
-      return {
-        totalStars: 0,
-        totalNotes: 0,
-        languageBreakdown: [] as { language: string; count: number; percentage: number }[],
-        monthlyTrend: [] as { month: string; count: number }[],
-        recentRepos: [] as typeof workspace.repositoryPage extends null ? never : NonNullable<typeof workspace.repositoryPage>['items'],
-      };
-    }
-
-    const items = workspace.repositoryPage.items;
-    const totalStars = items.reduce((sum, r) => sum + r.starsCount, 0);
-
-    // 语言分布 (雷达图)
-    const langMap = new Map<string, number>();
-    for (const r of items) {
-      const lang = r.language ?? '其他';
-      langMap.set(lang, (langMap.get(lang) ?? 0) + 1);
-    }
-    const total = items.length || 1;
-    const languageBreakdown = Array.from(langMap.entries())
-      .map(([language, count]) => ({ language, count, percentage: Math.round((count / total) * 100) }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6);
-
-    // 月度趋势 (折线图)
-    const monthMap = new Map<string, number>();
-    for (const r of items) {
-      const month = r.starredAt.slice(0, 7); // YYYY-MM
-      monthMap.set(month, (monthMap.get(month) ?? 0) + 1);
-    }
-    const now = new Date();
-    const months: { month: string; count: number }[] = [];
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      months.push({ month: key, count: monthMap.get(key) ?? 0 });
-    }
-
-    // 最近收藏
-    const recentRepos = [...items].sort((a, b) => b.starredAt.localeCompare(a.starredAt)).slice(0, 3);
-
-    return {
-      totalStars,
-      totalNotes: 0,
-      languageBreakdown,
-      monthlyTrend: months,
-      recentRepos,
-    };
-  }, [workspace.repositoryPage]);
-
   const user = workspace.authState.user;
+  const [stats, setStats] = useState<ProfileStats>(EMPTY_PROFILE_STATS);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user) {
+      setStats(EMPTY_PROFILE_STATS);
+      setErrorMessage(null);
+      return;
+    }
+    const request = { accountId: String(user.id) };
+    invoke<ProfileStats>('get_profile_stats', { request })
+      .then((data) => {
+        if (!cancelled) setStats(data);
+      })
+      .catch((reason) => {
+        if (!cancelled) setErrorMessage(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, workspace.repositoryPage, workspace.repositoryDetail, workspace.annotation, workspace.syncSummary]);
 
   // 雷达图数据
   const radarData = useMemo(() => {
     const topLangs = stats.languageBreakdown;
     return {
-      labels: topLangs.length > 0 ? topLangs.map((l) => l.language) : ['JavaScript', 'TypeScript', 'Python', 'Rust', 'Go', 'C++'],
+      labels: topLangs.map((l) => l.language),
       datasets: [
         {
           label: 'Stars 占比',
-          data: topLangs.length > 0 ? topLangs.map((l) => l.percentage) : [0, 0, 0, 0, 0, 0],
+          data: topLangs.map((l) => l.percentage),
           backgroundColor: 'rgba(37, 99, 235, 0.2)',
           borderColor: CHART_COLORS.primary,
           pointBackgroundColor: CHART_COLORS.primary,
@@ -176,6 +159,8 @@ export function ProfilePage() {
       ],
     };
   }, [stats.monthlyTrend]);
+  const hasLanguageBreakdown = stats.languageBreakdown.length > 0;
+  const hasMonthlyTrend = stats.monthlyTrend.length > 0;
 
   const lineOptions = {
     responsive: true,
@@ -234,19 +219,11 @@ export function ProfilePage() {
           <div className="flex-1 text-center md:text-left z-10">
             <div className="flex flex-col md:flex-row items-center gap-3 mb-2">
               <h2 className="font-headline-lg text-on-surface">{user?.login ?? '未连接'}</h2>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-tertiary-container/10 text-tertiary-container font-label-sm text-label-sm font-semibold border border-tertiary-container/20">
-                <Icon name="workspace_premium" size={14} fill />
-                Pro 会员
-              </span>
             </div>
             <p className="font-body-lg text-on-surface-variant mb-4 max-w-2xl">
-              全栈开发者 / 开源爱好者。热衷于探索前沿技术框架，专注于构建高性能、模块化的系统架构。致力于将复杂问题转化为优雅的代码解决方案。
+              {user ? '基于你的 GitHub Stars、笔记和 AI 摘要生成的本地知识库画像。' : '连接 GitHub 后即可查看个人知识库统计。'}
             </p>
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
-              <div className="flex items-center gap-1.5 text-on-surface-variant font-body-md">
-                <Icon name="location_on" size={18} />
-                <span>Shanghai, China</span>
-              </div>
               {user?.htmlUrl && (
                 <div className="flex items-center gap-1.5 text-on-surface-variant font-body-md">
                   <Icon name="link" size={18} />
@@ -255,30 +232,25 @@ export function ProfilePage() {
                   </a>
                 </div>
               )}
-              <div className="flex items-center gap-1.5 text-on-surface-variant font-body-md">
-                <Icon name="calendar_today" size={18} />
-                <span>加入于 2021年 8月</span>
-              </div>
             </div>
           </div>
-          {/* Edit Button */}
-          <div className="shrink-0 flex gap-3 z-10">
-            <button className="px-4 py-2 bg-surface-container border border-outline-variant text-on-surface rounded-lg font-body-md hover:bg-surface-container-high transition-colors active:scale-95">
-              编辑资料
-            </button>
-          </div>
         </div>
+        {errorMessage && <div className="mb-6 rounded-lg border border-error/20 bg-error/10 px-4 py-3 text-error">{errorMessage}</div>}
 
         {/* Bento Grid Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* Radar Chart (Skills) */}
-          <div className="glass-card rounded-xl p-6 lg:col-span-1 flex flex-col h-[400px]">
+          <div className="glass-card flex min-h-[320px] flex-col rounded-xl p-5 sm:p-6 lg:col-span-1 xl:min-h-[380px]">
             <div className="flex items-center gap-2 mb-6">
               <Icon name="radar" size={20} className="text-primary" />
               <h3 className="font-headline-md text-on-surface text-lg">开发者技能偏好</h3>
             </div>
             <div className="flex-1 relative w-full h-full">
-              <Radar data={radarData} options={radarOptions} />
+              {hasLanguageBreakdown ? (
+                <Radar data={radarData} options={radarOptions} />
+              ) : (
+                <ChartEmptyState icon="radar" text="同步 Stars 后生成语言偏好画像" />
+              )}
             </div>
             <p className="font-label-sm text-on-surface-variant text-center mt-4">基于 Stars 仓库主要语言分析</p>
           </div>
@@ -290,13 +262,11 @@ export function ProfilePage() {
               <div className="absolute -right-8 -bottom-8 w-32 h-32 bg-primary/5 rounded-full blur-2xl group-hover:bg-primary/10 transition-colors duration-500" />
               <div className="flex items-center gap-3 mb-4 text-on-surface-variant z-10">
                 <Icon name="description" size={20} className="p-2 bg-surface-container rounded-lg" />
-                <span className="font-body-md font-medium">已导出笔记数</span>
+                <span className="font-body-md font-medium">笔记数</span>
               </div>
               <div className="flex items-baseline gap-2 z-10">
-                <span className="font-headline-lg text-4xl">{compactNumber(stats.totalStars)}</span>
-                <span className="font-body-md text-success flex items-center">
-                  <Icon name="trending_up" size={14} /> 12%
-                </span>
+                <span className="font-headline-lg text-4xl">{compactNumber(stats.totalNotes)}</span>
+                <span className="font-body-md text-on-surface-variant">条</span>
               </div>
             </div>
             {/* Stat Card 2: AI Words */}
@@ -307,7 +277,7 @@ export function ProfilePage() {
                 <span className="font-body-md font-medium">AI 总结总字数</span>
               </div>
               <div className="flex items-baseline gap-2 z-10">
-                <span className="font-headline-lg text-4xl">45.2w</span>
+                <span className="font-headline-lg text-4xl">{compactNumber(stats.totalAiWords)}</span>
                 <span className="font-body-md text-on-surface-variant">字</span>
               </div>
             </div>
@@ -318,7 +288,6 @@ export function ProfilePage() {
                   <Icon name="bookmark" size={20} className="text-primary" />
                   <h3 className="font-headline-md text-on-surface text-lg">最近深度解析仓库</h3>
                 </div>
-                <button className="font-body-md text-primary hover:underline">查看全部</button>
               </div>
               <div className="flex flex-col gap-3 flex-1 justify-center">
                 {stats.recentRepos.length === 0 ? (
@@ -328,8 +297,10 @@ export function ProfilePage() {
                   </div>
                 ) : (
                   stats.recentRepos.map((repo) => (
-                    <div
+                    <button
+                      type="button"
                       key={repo.id}
+                      onClick={() => props.onOpenRepository(repo)}
                       className="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-low transition-colors border border-transparent hover:border-card-border cursor-pointer"
                     >
                       <div className="flex items-center gap-3">
@@ -352,7 +323,7 @@ export function ProfilePage() {
                       <span className="font-label-sm text-on-surface-variant">
                         {formatRelativeTime(repo.starredAt)}
                       </span>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
@@ -361,25 +332,31 @@ export function ProfilePage() {
         </div>
 
         {/* Annual Trend Chart */}
-        <div className="glass-card rounded-xl p-6 w-full h-[350px] flex flex-col">
+        <div className="glass-card flex min-h-[300px] w-full flex-col rounded-xl p-5 sm:p-6 xl:min-h-[350px]">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Icon name="monitoring" size={20} className="text-primary" />
               <h3 className="font-headline-md text-on-surface text-lg">年度收藏趋势</h3>
             </div>
-            <div className="flex items-center gap-2">
-              <select className="bg-surface-container border border-outline-variant text-on-surface text-sm rounded-md py-1 pl-2 pr-8 focus:ring-primary focus:border-primary">
-                <option>{new Date().getFullYear()}</option>
-                <option>{new Date().getFullYear() - 1}</option>
-                <option>{new Date().getFullYear() - 2}</option>
-              </select>
-            </div>
           </div>
           <div className="flex-1 w-full relative">
-            <Line data={lineData} options={lineOptions} />
+            {hasMonthlyTrend ? (
+              <Line data={lineData} options={lineOptions} />
+            ) : (
+              <ChartEmptyState icon="monitoring" text="同步 Stars 后生成年度收藏趋势" />
+            )}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ChartEmptyState(props: { icon: string; text: string }) {
+  return (
+    <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-2 text-center text-on-surface-variant">
+      <Icon name={props.icon} size={42} className="opacity-30" />
+      <p className="font-body-md text-sm">{props.text}</p>
     </div>
   );
 }

@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useWorkspace } from '@/providers/workspace-provider';
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Icon } from '@/components/ui/icon';
+import { useWorkspace } from '@/providers/workspace-provider';
 import { compactNumber } from '@/lib/format';
-import type { RepositoryListItem, AiSearchResult, SearchMatchReasonView } from '@/types';
+import type { AiSearchResponse, AiSearchResult } from '@/types';
 
 /* 建议词 */
 const SUGGESTIONS = [
@@ -15,14 +16,27 @@ const SUGGESTIONS = [
 ];
 
 /* 搜索历史 localStorage key */
-const HISTORY_KEY = 'stars-ai-search-history';
+const HISTORY_KEY = 'gsat-search-history';
 
-export function AISearchPage() {
+type AISearchPageProps = {
+  onOpenRepository: (repository: AiSearchResult['repository']) => void;
+};
+
+type SearchTurn = {
+  id: string;
+  query: string;
+  resultCount: number;
+};
+
+export function AISearchPage(props: AISearchPageProps) {
   const workspace = useWorkspace();
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
+  const [response, setResponse] = useState<AiSearchResponse | null>(null);
+  const [searchTurns, setSearchTurns] = useState<SearchTurn[]>([]);
 
   // 加载搜索历史
   useEffect(() => {
@@ -34,18 +48,39 @@ export function AISearchPage() {
     }
   }, []);
 
-  // 执行搜索
-  const results = useMemo<AiSearchResult[]>(() => {
-    if (!submittedQuery || !workspace.repositoryPage) return [];
-    return searchRepositories(submittedQuery, workspace.repositoryPage.items);
-  }, [submittedQuery, workspace.repositoryPage]);
-
-  function handleSearch() {
-    const q = query.trim();
+  async function executeSearch(nextQuery: string) {
+    const q = nextQuery.trim();
     if (!q) return;
+    if (!workspace.authState.user) {
+      setSubmittedQuery(q);
+      setErrorMessage('请先在设置中连接 GitHub 账号，再搜索你的 Stars 知识库。');
+      setResponse(null);
+      return;
+    }
     setIsSearching(true);
+    setErrorMessage(null);
     setSubmittedQuery(q);
-    // 保存到历史
+    saveHistory(q);
+    try {
+      const accountId = String(workspace.authState.user.id);
+      const contextQueries = searchTurns.map((turn) => turn.query).slice(-4);
+      const data = await invoke<AiSearchResponse>('search_repositories', {
+        request: { query: q, limit: 20, accountId, contextQueries },
+      });
+      setResponse(data);
+      setSearchTurns((turns) => [
+        ...turns,
+        { id: `${Date.now()}-${q}`, query: q, resultCount: data.totalCount },
+      ].slice(-8));
+    } catch (reason) {
+      setErrorMessage(toErrorMessage(reason));
+      setResponse(null);
+    } finally {
+      setIsSearching(false);
+    }
+  }
+
+  function saveHistory(q: string) {
     const newHistory = [q, ...history.filter((h) => h !== q)].slice(0, 10);
     setHistory(newHistory);
     try {
@@ -53,56 +88,68 @@ export function AISearchPage() {
     } catch {
       // ignore
     }
-    setTimeout(() => setIsSearching(false), 300);
+  }
+
+  function handleSearch() {
+    const q = query.trim();
+    if (!q) return;
+    void executeSearch(q);
   }
 
   function handleSuggestionClick(suggestion: string) {
     setQuery(suggestion);
-    setSubmittedQuery(suggestion);
-    setIsSearching(true);
-    setTimeout(() => setIsSearching(false), 300);
+    void executeSearch(suggestion);
   }
 
   function handleHistoryClick(item: string) {
     setQuery(item);
-    setSubmittedQuery(item);
+    void executeSearch(item);
   }
 
+  function handleClearConversation() {
+    setSearchTurns([]);
+    setSubmittedQuery('');
+    setResponse(null);
+    setErrorMessage(null);
+  }
+
+  const results = response?.results ?? [];
+
   return (
-    <div className="overflow-y-auto h-full">
-      <div className="p-margin-page max-w-6xl mx-auto w-full flex flex-col gap-8">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-[min(1180px,100%)] flex-col gap-6 p-4 sm:p-5 lg:p-6">
         {/* Hero Search Area */}
-        <div className="flex flex-col items-center justify-center pt-12 pb-8">
-          <div className="text-center mb-8">
-            <h1 className="font-headline-lg text-headline-lg text-on-surface mb-3 tracking-tight flex items-center justify-center gap-3">
-              <Icon name="psychology" size={36} className="text-primary" />
-              自然语言语义搜索
+        <div className="flex flex-col items-center justify-center py-6 lg:py-8">
+          <div className="mb-6 text-center">
+            <h1 className="font-headline-lg mb-3 flex items-center justify-center gap-3 text-[clamp(24px,3vw,32px)] text-on-surface">
+              <Icon name="psychology" size={32} className="text-primary" />
+              智能知识搜索
             </h1>
-            <p className="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mx-auto">
-              描述你需要的功能、问题或概念，AI 将在全量仓库数据中挖掘最匹配的代码资产。
+            <p className="font-body-md mx-auto max-w-2xl text-on-surface-variant">
+              描述你需要的功能、问题或概念，系统会结合本轮上下文、仓库元数据、README、AI 摘要、标签和笔记召回匹配项目。
             </p>
           </div>
 
           {/* Giant Search Bar */}
-          <div className="w-full max-w-3xl relative group">
+          <div className="group relative w-full max-w-3xl">
             <div className="absolute -inset-1 bg-gradient-to-r from-primary/30 to-tertiary/30 rounded-2xl blur opacity-30 group-hover:opacity-40 transition duration-500" />
-            <div className="glass-panel relative rounded-2xl flex items-center p-2 pl-6 transition-all focus-within:ring-2 focus-within:ring-primary focus-within:border-primary bg-white">
-              <Icon name="search" size={24} className="text-primary mr-3" />
+            <div className="glass-panel relative flex flex-col gap-2 rounded-2xl bg-surface-container-lowest p-2 transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary sm:flex-row sm:items-center sm:pl-4">
+              <Icon name="search" size={22} className="hidden shrink-0 text-primary sm:block" />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder="帮我找几个好用的 React 动画库..."
-                className="flex-1 bg-transparent border-none outline-none font-body-lg text-body-lg text-on-surface placeholder:text-on-surface-variant/70 h-14 font-medium"
+                className="h-11 min-w-0 flex-1 border-none bg-transparent px-3 font-body-md text-[15px] font-medium text-on-surface outline-none placeholder:text-on-surface-variant/70 sm:h-12 sm:px-0"
               />
-              <div className="flex items-center gap-2 pr-2">
+              <div className="flex shrink-0 items-center gap-2 sm:pr-1">
                 <kbd className="hidden sm:flex items-center justify-center bg-surface-container px-2 py-1 rounded font-label-sm text-label-sm text-on-surface-variant border border-outline-variant/30 shadow-sm">
                   ⌘ K
                 </kbd>
                 <button
                   onClick={handleSearch}
-                  className="bg-primary text-on-primary h-12 px-6 rounded-xl font-body-md text-body-md font-bold hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shadow-md"
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 font-body-md text-sm font-bold text-on-primary shadow-md transition-all hover:brightness-110 active:scale-95 sm:w-auto"
                 >
                   <span>搜索</span>
                   <Icon name="arrow_forward" size={16} />
@@ -112,36 +159,63 @@ export function AISearchPage() {
           </div>
 
           {/* Suggestions Chips */}
-          <div className="mt-6 flex flex-wrap justify-center gap-3 max-w-4xl">
-            <span className="font-label-sm text-label-sm text-on-surface-variant flex items-center mr-2 font-medium">
+          <div className="mt-5 flex max-w-4xl flex-wrap justify-center gap-2">
+            <span className="mr-1 flex items-center font-label-sm text-label-sm font-medium text-on-surface-variant">
               <Icon name="lightbulb" size={16} className="mr-1 text-warning" /> 建议:
             </span>
             {SUGGESTIONS.map((s) => (
               <button
                 key={s}
                 onClick={() => handleSuggestionClick(s)}
-                className="glass-panel bg-white px-4 py-1.5 rounded-full font-body-md text-body-md text-on-surface hover:bg-primary/5 hover:text-primary transition-colors flex items-center gap-2"
+                className="glass-panel flex items-center gap-2 rounded-full bg-surface-container-lowest px-3 py-1.5 font-body-md text-sm text-on-surface transition-colors hover:bg-primary/5 hover:text-primary"
               >
                 {s}
               </button>
             ))}
           </div>
+
+          {searchTurns.length > 0 && (
+            <div className="mt-4 flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
+              {searchTurns.map((turn) => (
+                <button
+                  key={turn.id}
+                  type="button"
+                  onClick={() => handleHistoryClick(turn.query)}
+                  className="rounded-full border border-outline-variant/30 bg-surface-container-low px-3 py-1 text-xs text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
+                  title={`再次搜索：${turn.query}`}
+                >
+                  {turn.query} · {turn.resultCount}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={handleClearConversation}
+                className="rounded-full border border-outline-variant/30 px-3 py-1 text-xs text-on-surface-variant transition-colors hover:text-on-surface"
+              >
+                清空上下文
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Results Area */}
         {submittedQuery && (
           <div className="flex flex-col gap-6 animate-fade-in-up">
-            <div className="flex items-center justify-between border-b border-outline-variant/30 pb-4">
-              <h3 className="font-headline-md text-headline-md text-on-surface flex items-center gap-2 font-bold">
+            <div className="flex flex-col gap-2 border-b border-outline-variant/30 pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="font-headline-md flex items-center gap-2 text-[20px] font-bold text-on-surface">
                 <Icon name="temp_preferences_custom" size={24} className="text-primary" />
-                AI 语义召回结果
+                本地知识召回结果
               </h3>
               <span className="font-body-md text-body-md text-on-surface-variant font-medium">
-                {isSearching ? '搜索中...' : `找到 ${results.length} 个高度匹配的仓库`}
+                {isSearching ? '搜索中...' : `找到 ${response?.totalCount ?? results.length} 个匹配仓库`}
               </span>
             </div>
 
-            {results.length === 0 && !isSearching ? (
+            {errorMessage ? (
+              <div className="rounded-lg border border-error/20 bg-error/10 px-4 py-3 text-error font-body-md">
+                {errorMessage}
+              </div>
+            ) : results.length === 0 && !isSearching ? (
               <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant gap-2">
                 <Icon name="search_off" size={64} className="opacity-30" />
                 <p className="font-body-md">未找到匹配的仓库，试试换个关键词</p>
@@ -149,7 +223,11 @@ export function AISearchPage() {
             ) : (
               <div className="grid grid-cols-1 gap-6">
                 {results.map((result, idx) => (
-                  <SearchResultCard key={idx} result={result} />
+                  <SearchResultCard
+                    key={idx}
+                    result={result}
+                    onOpenRepository={props.onOpenRepository}
+                  />
                 ))}
               </div>
             )}
@@ -168,7 +246,7 @@ export function AISearchPage() {
                 <button
                   key={idx}
                   onClick={() => handleHistoryClick(item)}
-                  className="glass-panel bg-white px-4 py-2 rounded-lg font-body-md text-body-md text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-colors flex items-center gap-2 font-medium"
+                  className="glass-panel bg-surface-container-lowest px-4 py-2 rounded-lg font-body-md text-body-md text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-colors flex items-center gap-2 font-medium"
                 >
                   <Icon name="manage_search" size={18} />
                   {item}
@@ -183,20 +261,30 @@ export function AISearchPage() {
 }
 
 /* === 搜索结果卡片 === */
-function SearchResultCard({ result }: { result: AiSearchResult }) {
+function SearchResultCard({
+  result,
+  onOpenRepository,
+}: {
+  result: AiSearchResult;
+  onOpenRepository: (repository: AiSearchResult['repository']) => void;
+}) {
   const { repository: repo, score, explanationZh, reasons, keywords } = result;
 
   return (
-    <div className="glass-panel bg-white rounded-xl p-6 hover:-translate-y-1 transition-transform duration-300 group">
+    <div className="glass-panel group rounded-xl bg-surface-container-lowest p-4 transition-transform duration-300 hover:-translate-y-1 sm:p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-3">
+          <div className="mb-3 flex min-w-0 flex-wrap items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shadow-sm shrink-0">
               <Icon name="book" size={24} />
             </div>
-            <h4 className="font-headline-md text-[22px] font-bold text-primary group-hover:underline cursor-pointer truncate">
+            <button
+              type="button"
+              onClick={() => onOpenRepository(repo)}
+              className="min-w-0 flex-1 truncate text-left font-headline-md text-[18px] font-bold text-primary cursor-pointer group-hover:underline sm:text-[20px]"
+            >
               {repo.fullName}
-            </h4>
+            </button>
             <span className="bg-success/10 px-2.5 py-1 rounded-md text-xs font-label-sm text-success border border-success/20 flex items-center gap-1 font-bold shadow-sm shrink-0">
               <Icon name="check_circle" size={14} />
               匹配度 {score}%
@@ -263,105 +351,20 @@ function SearchResultCard({ result }: { result: AiSearchResult }) {
           >
             <Icon name="open_in_new" size={20} />
           </a>
+          <button
+            type="button"
+            onClick={() => onOpenRepository(repo)}
+            className="p-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors border border-primary/20 shadow-sm"
+            title="在知识库中查看"
+          >
+            <Icon name="visibility" size={20} />
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-/* === 搜索引擎 (前端侧) === */
-
-function searchRepositories(query: string, repos: RepositoryListItem[]): AiSearchResult[] {
-  const tokens = tokenize(query);
-  if (tokens.length === 0) return [];
-
-  const results: AiSearchResult[] = [];
-
-  for (const repo of repos) {
-    const haystack = [
-      repo.fullName,
-      repo.description ?? '',
-      repo.language ?? '',
-      repo.topics.join(' '),
-    ].join(' ').toLowerCase();
-
-    let matchCount = 0;
-    const reasons: SearchMatchReasonView[] = [];
-    const matchedKeywords: string[] = [];
-
-    for (const token of tokens) {
-      const lowerToken = token.toLowerCase();
-      if (haystack.includes(lowerToken)) {
-        matchCount++;
-
-        // 判断匹配类型
-        if (repo.fullName.toLowerCase().includes(lowerToken)) {
-          reasons.push({
-            label: '仓库名称命中',
-            detail: `仓库名 "${repo.fullName}" 包含关键词 "${token}"`,
-          });
-        } else if (repo.description?.toLowerCase().includes(lowerToken)) {
-          reasons.push({
-            label: '描述命中',
-            detail: `仓库描述中包含关键词 "${token}"`,
-          });
-        } else if (repo.language?.toLowerCase().includes(lowerToken)) {
-          reasons.push({
-            label: '语言匹配',
-            detail: `项目主要语言是 ${repo.language}`,
-          });
-        } else if (repo.topics.some((t) => t.toLowerCase().includes(lowerToken))) {
-          reasons.push({
-            label: 'Topic 命中',
-            detail: `仓库 Topics 中包含 "${token}"`,
-          });
-          matchedKeywords.push(...repo.topics.filter((t) => t.toLowerCase().includes(lowerToken)));
-        }
-        matchedKeywords.push(token);
-      }
-    }
-
-    if (matchCount === 0) continue;
-
-    // 计算分数
-    const tokenRatio = matchCount / tokens.length;
-    const starBoost = Math.min(repo.starsCount / 10000, 0.15); // 高星仓库加分
-    const score = Math.min(Math.round((tokenRatio * 85 + starBoost * 100) * 10) / 10, 99);
-
-    // 生成 AI 分析理由
-    const reasonLabels = reasons.map((r) => r.label).join('、');
-    const explanationZh = reasons.length > 0
-      ? `该仓库通过${reasonLabels}与您的查询"${query}"高度匹配。${repo.description ? '仓库描述：' + repo.description.slice(0, 100) : ''}适合作为候选方案。`
-      : `该仓库包含您查询的关键词，与"${query}"有一定相关性。`;
-
-    results.push({
-      repository: repo,
-      score,
-      explanationZh,
-      reasons: reasons.slice(0, 5),
-      keywords: [...new Set(matchedKeywords)].slice(0, 8),
-      aiSummary: null,
-    });
-  }
-
-  // 按分数排序
-  results.sort((a, b) => b.score - a.score);
-  return results.slice(0, 20);
-}
-
-function tokenize(query: string): string[] {
-  // 中文分词：按空格、标点分割，保留 2 字以上的词
-  const tokens = query
-    .toLowerCase()
-    .split(/[\s,，。、;；!！?？()（）\[\]【】]+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length >= 2);
-
-  // 如果是英文，也按单词分割
-  const englishWords = query
-    .split(/[^a-zA-Z0-9+#.-]+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length >= 2);
-
-  return [...new Set([...tokens, ...englishWords])];
+function toErrorMessage(reason: unknown) {
+  return reason instanceof Error ? reason.message : String(reason);
 }
