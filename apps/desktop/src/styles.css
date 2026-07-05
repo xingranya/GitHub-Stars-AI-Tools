@@ -131,6 +131,41 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+.dark {
+  --color-surface: #111318;
+  --color-surface-dim: #0d0f14;
+  --color-surface-bright: #252830;
+  --color-surface-container-lowest: #0b0d11;
+  --color-surface-container-low: #171a21;
+  --color-surface-container: #1d2028;
+  --color-surface-container-high: #282c35;
+  --color-surface-container-highest: #343945;
+  --color-surface-variant: #343945;
+  --color-on-surface: #f2f4fb;
+  --color-on-surface-variant: #c6cad6;
+  --color-inverse-surface: #e4e7f0;
+  --color-inverse-on-surface: #1b1d24;
+  --color-outline: #8d92a1;
+  --color-outline-variant: #434958;
+  --color-on-primary-container: #f8f9ff;
+  --color-primary-fixed: rgb(59 130 246 / 0.22);
+  --color-primary-fixed-dim: rgb(59 130 246 / 0.32);
+  --color-background: #0d0f14;
+  --color-on-background: #f2f4fb;
+  --color-foreground: #f2f4fb;
+  --color-card: rgb(23 26 33 / 0.78);
+  --color-card-foreground: #f2f4fb;
+  --color-card-border: rgb(255 255 255 / 0.1);
+  --color-muted: rgb(52 57 69 / 0.6);
+  --color-muted-foreground: #a8adbb;
+  --color-popover: #171a21;
+  --color-popover-foreground: #f2f4fb;
+  --color-accent: rgb(59 130 246 / 0.18);
+  --color-accent-foreground: #d8e5ff;
+  --color-border: #343945;
+  --color-input: #252830;
+}
+
 /* ===========================================================================
  * 全局基础样式
  * =========================================================================*/
@@ -158,6 +193,12 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+.dark body {
+  background-color: #0d0f14;
+  background-image:
+    linear-gradient(180deg, rgb(23 26 33 / 0.98), rgb(13 15 20 / 1));
 }
 
 button,
@@ -231,6 +272,139 @@ textarea {
   background: var(--color-primary-fixed);
   border-color: var(--color-primary-fixed-dim);
   transform: translateY(-1px);
+}
+
+.dark .tag-pill {
+  background: rgb(29 32 40 / 0.78);
+  border-color: rgb(255 255 255 / 0.08);
+}
+
+/* ===========================================================================
+ * README 渲染
+ * =========================================================================*/
+.readme-rendered {
+  font-size: 14px;
+  line-height: 1.72;
+  overflow-wrap: anywhere;
+}
+
+.readme-rendered > :first-child {
+  margin-top: 0;
+}
+
+.readme-rendered > :last-child {
+  margin-bottom: 0;
+}
+
+.readme-rendered h1,
+.readme-rendered h2,
+.readme-rendered h3,
+.readme-rendered h4 {
+  margin: 1.4em 0 0.65em;
+  color: var(--color-on-surface);
+  font-family: var(--font-headline-md);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.readme-rendered h1 {
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--color-outline-variant);
+  font-size: 1.55rem;
+}
+
+.readme-rendered h2 {
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--color-outline-variant);
+  font-size: 1.25rem;
+}
+
+.readme-rendered h3 {
+  font-size: 1.05rem;
+}
+
+.readme-rendered p,
+.readme-rendered ul,
+.readme-rendered ol,
+.readme-rendered blockquote,
+.readme-rendered pre,
+.readme-rendered table {
+  margin: 0.85rem 0;
+}
+
+.readme-rendered ul,
+.readme-rendered ol {
+  padding-left: 1.4rem;
+}
+
+.readme-rendered li + li {
+  margin-top: 0.25rem;
+}
+
+.readme-rendered a {
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.readme-rendered a:hover {
+  text-decoration: underline;
+}
+
+.readme-rendered img {
+  max-width: 100%;
+  height: auto;
+  margin: 1rem auto;
+  border-radius: 0.5rem;
+}
+
+.readme-rendered code {
+  border-radius: 0.35rem;
+  background: var(--color-surface-container-high);
+  padding: 0.12rem 0.35rem;
+  font-family: var(--font-label-sm);
+  font-size: 0.9em;
+}
+
+.readme-rendered pre {
+  overflow-x: auto;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 0.5rem;
+  background: var(--color-surface-container-low);
+  padding: 0.9rem 1rem;
+}
+
+.readme-rendered pre code {
+  display: block;
+  min-width: max-content;
+  background: transparent;
+  padding: 0;
+}
+
+.readme-rendered table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.readme-rendered th,
+.readme-rendered td {
+  border: 1px solid var(--color-outline-variant);
+  padding: 0.45rem 0.65rem;
+}
+
+.readme-rendered th {
+  background: var(--color-surface-container);
+  font-weight: 700;
+}
+
+.readme-rendered blockquote {
+  border-left: 3px solid var(--color-primary);
+  color: var(--color-on-surface-variant);
+  padding-left: 0.9rem;
 }
 
 /* ===========================================================================

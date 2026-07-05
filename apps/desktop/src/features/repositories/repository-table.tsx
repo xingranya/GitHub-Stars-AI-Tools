@@ -93,13 +93,12 @@ function RepositoryRow(props: {
     >
       <TableCell className="pl-6">
         <div className="flex min-w-0 items-start gap-3">
-          <button
-            className="mt-0.5 grid size-6 place-items-center rounded-lg text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            type="button"
-            aria-label={`选择 ${props.repository.fullName}`}
+          <span
+            className="mt-0.5 grid size-6 place-items-center rounded-lg text-muted-foreground"
+            aria-hidden="true"
           >
             {props.isSelected ? <Check className="size-4 text-primary" /> : <Circle className="size-4" />}
-          </button>
+          </span>
           <div className="min-w-0">
             <a
               className="inline-flex max-w-[230px] items-center gap-1.5 truncate text-sm font-medium text-foreground transition-colors hover:text-primary hover:underline"

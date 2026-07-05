@@ -19,19 +19,19 @@ type AppShellProps = {
 
 export function AppShell(props: AppShellProps) {
   return (
-    <main className="min-h-screen min-w-[1180px] bg-background text-foreground">
+    <main className="min-h-screen min-w-0 bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex h-14 items-center justify-between gap-4 px-6">
-          <div className="flex items-center gap-3">
+        <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 px-4 py-2 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
               <Brain className="size-4" />
             </span>
-            <div className="leading-tight">
-              <strong className="block text-sm font-semibold tracking-tight">Stars Knowledge</strong>
-              <span className="text-xs text-muted-foreground">GitHub Stars 语义知识库</span>
+            <div className="min-w-0 leading-tight">
+              <strong className="block truncate text-sm font-semibold tracking-tight" title="GitHub-Stars-AI-Tools">GitHub-Stars-AI-Tools</strong>
+              <span className="text-xs text-muted-foreground">GSAT 本地知识库</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <HeaderBadge icon={<Database className="size-3.5" />} label={props.status?.storage ?? 'SQLite'} />
             <HeaderBadge icon={<HardDrive className="size-3.5" />} label={`${props.repositoryStats.total} 个仓库`} />
             <HeaderBadge
@@ -50,20 +50,20 @@ export function AppShell(props: AppShellProps) {
             </Button>
           </div>
         </div>
-        <div className="border-t bg-muted/30 px-6 py-3">{props.toolbar}</div>
+        <div className="border-t bg-muted/30 px-4 py-3 sm:px-6">{props.toolbar}</div>
       </header>
 
       {(props.error || props.message) ? (
-        <div className="border-b bg-muted/20 px-6 py-2.5">
+        <div className="border-b bg-muted/20 px-4 py-2.5 sm:px-6">
           {props.error ? <p className="text-sm font-medium text-destructive">{props.error}</p> : null}
           {props.message ? <p className="text-sm text-foreground">{props.message}</p> : null}
         </div>
       ) : null}
 
-      <div className="grid min-h-[calc(100vh-113px)] grid-cols-[280px_minmax(620px,1fr)_400px]">
+      <div className="grid min-h-[calc(100vh-113px)] grid-cols-1 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(220px,280px)_minmax(0,1fr)_minmax(320px,400px)]">
         <aside className="min-w-0 border-r bg-card p-4">{props.sidebar}</aside>
         <section className="min-w-0 border-r bg-background">{props.content}</section>
-        <section className="min-w-0 bg-muted/20 p-4">{props.detail}</section>
+        <section className="min-w-0 bg-muted/20 p-4 lg:col-span-2 2xl:col-span-1">{props.detail}</section>
       </div>
     </main>
   );

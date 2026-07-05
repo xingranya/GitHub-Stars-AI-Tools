@@ -7,6 +7,7 @@ type WelcomeFlowProps = {
   onComplete: () => void;
   onConnectGitHub: (token: string) => Promise<void>;
   onSyncStars: () => Promise<void>;
+  onFetchReadmes: () => Promise<void>;
 };
 
 type Step = 'welcome' | 'github' | 'sync' | 'complete';
@@ -15,56 +16,84 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
   const [currentStep, setCurrentStep] = useState<Step>('welcome');
   const [token, setToken] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
+  const [connectStatus, setConnectStatus] = useState<string | null>(null);
 
   async function handleGitHubConnect() {
     if (!token.trim()) return;
+    const statusTimers: number[] = [];
     setIsLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setWarningMessage(null);
+    setConnectStatus('正在验证 GitHub Token...');
     try {
+      statusTimers.push(window.setTimeout(() => {
+        setConnectStatus('正在保存本地凭据，如果系统弹出钥匙串授权，请选择允许。');
+      }, 1200));
+      statusTimers.push(window.setTimeout(() => {
+        setConnectStatus('连接仍在进行中，可能是 GitHub 网络较慢，请稍候。');
+      }, 8000));
       await props.onConnectGitHub(token);
+      setSuccessMessage('GitHub 账号已连接，可以同步 Stars。');
+      setConnectStatus(null);
       setCurrentStep('sync');
     } catch (error) {
-      console.error('GitHub connection failed:', error);
+      setConnectStatus(null);
+      setErrorMessage(toErrorMessage(error));
     } finally {
+      statusTimers.forEach(window.clearTimeout);
       setIsLoading(false);
     }
   }
 
   async function handleSync() {
     setIsLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setWarningMessage(null);
     try {
       await props.onSyncStars();
+      setSuccessMessage('Stars 已同步，正在缓存 README...');
+      try {
+        await props.onFetchReadmes();
+      } catch (error) {
+        setWarningMessage(`Stars 已同步，README 缓存暂未完成：${toErrorMessage(error)}。进入工作台后可在仓库页重新抓取 README。`);
+      }
       setCurrentStep('complete');
     } catch (error) {
-      console.error('Sync failed:', error);
+      setErrorMessage(toErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
-      <div className="w-full max-w-2xl px-8">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-background px-4 py-6 sm:px-6">
+      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center">
         {/* 进度指示器 */}
-        <div className="mb-12 flex items-center justify-center gap-3">
+        <div className="mb-6 flex flex-wrap items-center justify-center gap-2 sm:mb-10 sm:gap-3">
           <StepIndicator label="欢迎" isActive={currentStep === 'welcome'} isCompleted={currentStep !== 'welcome'} />
-          <div className="h-px w-16 bg-border" />
+          <div className="hidden h-px w-12 bg-border sm:block lg:w-16" />
           <StepIndicator label="连接" isActive={currentStep === 'github'} isCompleted={currentStep === 'sync' || currentStep === 'complete'} />
-          <div className="h-px w-16 bg-border" />
+          <div className="hidden h-px w-12 bg-border sm:block lg:w-16" />
           <StepIndicator label="同步" isActive={currentStep === 'sync'} isCompleted={currentStep === 'complete'} />
-          <div className="h-px w-16 bg-border" />
+          <div className="hidden h-px w-12 bg-border sm:block lg:w-16" />
           <StepIndicator label="完成" isActive={currentStep === 'complete'} isCompleted={false} />
         </div>
 
         {/* 内容区域 */}
-        <div className="rounded-2xl border bg-card p-12 shadow-lg">
+        <div className="rounded-2xl border bg-card p-5 shadow-lg sm:p-8 lg:p-12">
           {currentStep === 'welcome' && (
             <div className="text-center">
-              <div className="mx-auto mb-8 grid size-20 place-items-center rounded-2xl bg-primary/10">
-                <Rocket className="size-10 text-primary" />
+              <div className="mx-auto mb-6 grid size-16 place-items-center rounded-2xl bg-primary/10 sm:mb-8 sm:size-20">
+                <Rocket className="size-8 text-primary sm:size-10" />
               </div>
-              <h1 className="text-3xl font-bold tracking-tight">欢迎使用 Stars Knowledge</h1>
-              <p className="mt-4 text-lg text-muted-foreground">
-                将你的 GitHub Stars 转化为可搜索、可管理的个人知识库
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">欢迎使用 GitHub-Stars-AI-Tools</h1>
+              <p className="mt-4 text-base text-muted-foreground sm:text-lg">
+                GSAT 将你的 GitHub Stars 转化为可搜索、可管理的个人知识库
               </p>
               <div className="mt-10 grid gap-4">
                 <FeatureItem icon={<GitBranch className="size-5" />} title="本地优先" description="所有数据存储在本地 SQLite，完全掌控" />
@@ -84,8 +113,8 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
 
           {currentStep === 'github' && (
             <div className="text-center">
-              <div className="mx-auto mb-8 grid size-20 place-items-center rounded-2xl bg-primary/10">
-                <GitBranch className="size-10 text-primary" />
+              <div className="mx-auto mb-6 grid size-16 place-items-center rounded-2xl bg-primary/10 sm:mb-8 sm:size-20">
+                <GitBranch className="size-8 text-primary sm:size-10" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight">连接 GitHub</h2>
               <p className="mt-3 text-muted-foreground">
@@ -96,8 +125,9 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
                   <p className="text-sm font-semibold">如何获取 Token？</p>
                   <ol className="mt-3 space-y-2 text-sm text-muted-foreground">
                     <li>1. 访问 <a href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer" className="text-primary hover:underline">GitHub Token 设置</a></li>
-                    <li>2. 勾选 <code className="rounded bg-muted px-1 py-0.5">repo</code> 和 <code className="rounded bg-muted px-1 py-0.5">user</code> 权限</li>
-                    <li>3. 生成并复制 Token</li>
+                    <li>2. 勾选 <code className="rounded bg-muted px-1 py-0.5">repo</code> 和 <code className="rounded bg-muted px-1 py-0.5">user</code> 权限用于同步 Stars</li>
+                    <li>3. 如需使用 Gist 备份，再勾选 <code className="rounded bg-muted px-1 py-0.5">gist</code> 权限</li>
+                    <li>4. 生成并复制 Token</li>
                   </ol>
                 </div>
                 <Input
@@ -111,12 +141,28 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
                 <p className="text-xs text-muted-foreground">
                   Token 仅保存在本地 Keychain，不会上传到任何服务器
                 </p>
+                {errorMessage && (
+                  <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {errorMessage}
+                  </p>
+                )}
+                {connectStatus && (
+                  <p className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary">
+                    {connectStatus}
+                  </p>
+                )}
+                {successMessage && (
+                  <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+                    {successMessage}
+                  </p>
+                )}
               </div>
-              <div className="mt-8 flex gap-3">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Button
                   variant="outline"
                   size="lg"
                   className="flex-1 rounded-xl"
+                  disabled={isLoading}
                   onClick={() => setCurrentStep('welcome')}
                 >
                   返回
@@ -127,7 +173,7 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
                   disabled={!token.trim() || isLoading}
                   onClick={handleGitHubConnect}
                 >
-                  {isLoading ? '验证中…' : '连接账号'}
+                  {isLoading ? '连接中…' : '连接账号'}
                   <ChevronRight className="ml-2 size-5" />
                 </Button>
               </div>
@@ -136,8 +182,8 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
 
           {currentStep === 'sync' && (
             <div className="text-center">
-              <div className="mx-auto mb-8 grid size-20 place-items-center rounded-2xl bg-primary/10">
-                <Database className="size-10 text-primary" />
+              <div className="mx-auto mb-6 grid size-16 place-items-center rounded-2xl bg-primary/10 sm:mb-8 sm:size-20">
+                <Database className="size-8 text-primary sm:size-10" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight">同步 Stars</h2>
               <p className="mt-3 text-muted-foreground">
@@ -149,15 +195,30 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
                   同步完成后，你可以开始搜索、筛选、打标签和记笔记。
                 </p>
               </div>
-              <div className="mt-8 flex gap-3">
+              {errorMessage && (
+                <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {errorMessage}
+                </p>
+              )}
+              {successMessage && (
+                <p className="mt-4 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+                  {successMessage}
+                </p>
+              )}
+              {warningMessage && (
+                <p className="mt-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+                  {warningMessage}
+                </p>
+              )}
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Button
                   variant="outline"
                   size="lg"
                   className="flex-1 rounded-xl"
                   disabled={isLoading}
-                  onClick={() => setCurrentStep('github')}
+                  onClick={props.onComplete}
                 >
-                  返回
+                  稍后同步
                 </Button>
                 <Button
                   size="lg"
@@ -174,8 +235,8 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
 
           {currentStep === 'complete' && (
             <div className="text-center">
-              <div className="mx-auto mb-8 grid size-20 place-items-center rounded-2xl bg-success/10">
-                <Check className="size-10 text-success" />
+              <div className="mx-auto mb-6 grid size-16 place-items-center rounded-2xl bg-success/10 sm:mb-8 sm:size-20">
+                <Check className="size-8 text-success sm:size-10" />
               </div>
               <h2 className="text-2xl font-bold tracking-tight">一切就绪！</h2>
               <p className="mt-3 text-muted-foreground">
@@ -186,6 +247,11 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
                 <TipItem number="2" text="在知识面板中为项目添加标签和笔记" />
                 <TipItem number="3" text="通过 Gist 在多设备间同步注解数据" />
               </div>
+              {warningMessage && (
+                <p className="mt-6 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+                  {warningMessage}
+                </p>
+              )}
               <Button
                 size="lg"
                 className="mt-10 h-12 rounded-xl px-8 shadow-sm"
@@ -199,6 +265,10 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
       </div>
     </div>
   );
+}
+
+function toErrorMessage(reason: unknown) {
+  return reason instanceof Error ? reason.message : String(reason);
 }
 
 function StepIndicator(props: { label: string; isActive: boolean; isCompleted: boolean }) {

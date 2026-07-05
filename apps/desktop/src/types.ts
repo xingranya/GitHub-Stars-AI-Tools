@@ -24,6 +24,8 @@ export type StarSyncSummary = {
   createdCount: number;
   updatedCount: number;
   removedCount: number;
+  scannedCount: number;
+  mode: 'full' | 'incremental';
 };
 
 export type ReadmeFetchSummary = {
@@ -31,6 +33,28 @@ export type ReadmeFetchSummary = {
   fetchedCount: number;
   skippedCount: number;
   missingCount: number;
+  failedCount: number;
+  failures: { repositoryId: string; fullName: string; error: string }[];
+};
+
+export type TaskProgressEvent = {
+  taskId: string;
+  taskType: 'sync' | 'readme' | 'ai' | string;
+  status: 'running' | 'succeeded' | 'failed' | string;
+  stage: string;
+  current: number;
+  total: number;
+  message: string;
+  repositoryName: string | null;
+};
+
+export type BatchAiDocumentSummary = {
+  totalCount: number;
+  generatedCount: number;
+  skippedCount: number;
+  missingReadmeCount: number;
+  failedCount: number;
+  failures: { repositoryId: string; fullName: string; error: string }[];
 };
 
 export type GistAnnotationExportSummary = {
@@ -61,6 +85,10 @@ export type RepositoryListItem = {
   starredAt: string;
   pushedAt: string | null;
   hasReadme: boolean;
+  aiSummary: string | null;
+  aiKeywords: string[];
+  suggestedTags: string[];
+  aiGeneratedAt: string | null;
 };
 
 export type RepositoryListPage = {
@@ -161,8 +189,6 @@ export type DashboardStats = {
   totalTags: number;
   totalNotes: number;
   languageDistribution: LanguageDistributionItem[];
-  topTags: { id: string; name: string; color: string | null; count: number }[];
-  readStatusDistribution: { status: ReadingStatus; count: number }[];
   recentRepos: RepositoryListItem[];
   lastSyncAt: string | null;
 };
@@ -191,6 +217,29 @@ export type TagNetworkData = {
   totalLinks: number;
 };
 
+export type AiTagNetworkSummary = {
+  tagCount: number;
+  linkedCount: number;
+  skippedRepositoryCount: number;
+};
+
+export type GithubRepositoryRecommendation = {
+  fullName: string;
+  description: string | null;
+  language: string | null;
+  topics: string[];
+  htmlUrl: string;
+  starsCount: number;
+  forksCount: number;
+  pushedAt: string | null;
+};
+
+export type GithubRecommendationResponse = {
+  rationaleZh: string;
+  queries: string[];
+  results: GithubRepositoryRecommendation[];
+};
+
 export type TagGroup = {
   id: string;
   name: string;
@@ -213,7 +262,7 @@ export type AiSearchResult = {
 
 export type AiSearchResponse = {
   query: string;
-  mode: 'keyword' | 'natural_language' | 'hybrid';
+  mode: 'local_knowledge' | 'keyword' | 'natural_language' | 'hybrid';
   results: AiSearchResult[];
   totalCount: number;
 };
@@ -227,12 +276,7 @@ export type ProfileStats = {
   totalAiWords: number;
   languageBreakdown: { language: string; count: number; percentage: number }[];
   monthlyTrend: { month: string; count: number }[];
-  recentCollections: { repository: RepositoryListItem; noteSummary: string | null; noteCount: number }[];
-  accountInfo: {
-    login: string;
-    avatarUrl: string | null;
-    joinedAt: string | null;
-  };
+  recentRepos: RepositoryListItem[];
 };
 
 export type { AppSettings, ThemeSettings, SyncSettings, AISettings, GeneralSettings } from './types-settings';
