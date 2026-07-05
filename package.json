@@ -5,10 +5,10 @@
   "type": "module",
   "packageManager": "pnpm@11.8.0",
   "scripts": {
-    "dev": "pnpm --filter @stars-ai/desktop dev",
-    "build": "pnpm build:packages && pnpm --filter @stars-ai/desktop build",
+    "dev": "pnpm --filter @gsat/desktop dev",
+    "build": "pnpm build:packages && pnpm --filter @gsat/desktop build",
     "build:packages": "tsc -b tsconfig.packages.json",
-    "tauri": "pnpm --filter @stars-ai/desktop tauri"
+    "tauri": "pnpm --filter @gsat/desktop tauri"
   },
   "devDependencies": {
     "typescript": "latest"

@@ -36,7 +36,7 @@ COREPACK_HOME="$PWD/.corepack" pnpm build:packages  # 构建共享包
 COREPACK_HOME="$PWD/.corepack" pnpm build           # 构建桌面应用
 
 # 验证 SQLite 迁移
-COREPACK_HOME="$PWD/.corepack" pnpm --filter @stars-ai/storage verify:migrations
+COREPACK_HOME="$PWD/.corepack" pnpm --filter @gsat/storage verify:migrations
 
 # Rust 后端检查
 cargo fmt --manifest-path "$PWD/apps/desktop/src-tauri/Cargo.toml" --check
@@ -60,7 +60,7 @@ open apps/desktop/src-tauri/target/release/bundle/
 
 ```bash
 COREPACK_HOME="$PWD/.corepack" pnpm build:packages
-COREPACK_HOME="$PWD/.corepack" pnpm --filter @stars-ai/storage verify:migrations
+COREPACK_HOME="$PWD/.corepack" pnpm --filter @gsat/storage verify:migrations
 COREPACK_HOME="$PWD/.corepack" pnpm build
 cargo fmt --manifest-path "$PWD/apps/desktop/src-tauri/Cargo.toml" --check
 cargo check --manifest-path "$PWD/apps/desktop/src-tauri/Cargo.toml"
@@ -127,7 +127,7 @@ SQLite Schema 由 `packages/storage/migrations/` 下的 `.sql` 文件管理：
 修改 Schema 时：
 
 1. 在 `migrations/` 下新建 `.sql` 文件
-2. 运行 `COREPACK_HOME="$PWD/.corepack" pnpm --filter @stars-ai/storage verify:migrations` 验证
+2. 运行 `COREPACK_HOME="$PWD/.corepack" pnpm --filter @gsat/storage verify:migrations` 验证
 3. 更新 `packages/domain/src/index.ts` 中的相关类型定义
 
 ### 前端架构约定
@@ -178,7 +178,7 @@ SQLite Schema 由 `packages/storage/migrations/` 下的 `.sql` 文件管理：
 
 1. 在 `packages/storage/migrations/` 下新建 `.sql` 文件
 2. 文件名按序号递增（如 `002_add_new_table.sql`）
-3. 运行 `pnpm --filter @stars-ai/storage verify:migrations` 验证
+3. 运行 `pnpm --filter @gsat/storage verify:migrations` 验证
 4. 更新 `packages/domain` 中的 TypeScript 类型
 
 ### 清理 Rust 缓存

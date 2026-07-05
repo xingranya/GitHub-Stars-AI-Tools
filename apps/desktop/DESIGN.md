@@ -1,6 +1,6 @@
 # DESIGN.md
 
-本文档记录 GitHub Stars AI Tools 桌面应用的视觉系统与设计决策。
+本文档记录 GitHub-Stars-AI-Tools 桌面应用的视觉系统与设计决策。
 
 ## 设计原则
 

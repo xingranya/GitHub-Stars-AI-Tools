@@ -7,12 +7,12 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "@stars-ai/domain": ["packages/domain/src/index.ts"],
-      "@stars-ai/storage": ["packages/storage/src/index.ts"],
-      "@stars-ai/github": ["packages/github/src/index.ts"],
-      "@stars-ai/ai": ["packages/ai/src/index.ts"],
-      "@stars-ai/search": ["packages/search/src/index.ts"],
-      "@stars-ai/worker": ["packages/worker/src/index.ts"]
+      "@gsat/domain": ["packages/domain/src/index.ts"],
+      "@gsat/storage": ["packages/storage/src/index.ts"],
+      "@gsat/github": ["packages/github/src/index.ts"],
+      "@gsat/ai": ["packages/ai/src/index.ts"],
+      "@gsat/search": ["packages/search/src/index.ts"],
+      "@gsat/worker": ["packages/worker/src/index.ts"]
     },
     "strict": true,
     "declaration": true,

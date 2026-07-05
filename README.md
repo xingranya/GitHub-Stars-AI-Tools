@@ -1,4 +1,4 @@
-# GitHub Stars AI Tools
+# GitHub-Stars-AI-Tools
 
 > 本地优先的 GitHub Stars 管理桌面应用，支持 AI 智能检索与知识管理
 
@@ -130,7 +130,7 @@ packages/
 pnpm build:packages
 
 # 验证数据库迁移
-pnpm --filter @stars-ai/storage verify:migrations
+pnpm --filter @gsat/storage verify:migrations
 
 # 检查 Rust 代码
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
