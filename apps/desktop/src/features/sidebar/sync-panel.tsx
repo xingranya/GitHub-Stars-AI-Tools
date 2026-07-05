@@ -1,0 +1,64 @@
+import { FormEvent } from 'react';
+import { BookOpen, Download, RefreshCw, Upload } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import type { GitHubAuthState, ReadmeFetchSummary, StarSyncSummary } from '@/types';
+
+type SyncPanelProps = {
+  authState: GitHubAuthState;
+  gistIdDraft: string;
+  isExportingAnnotations: boolean;
+  isFetchingReadmes: boolean;
+  isImportingAnnotations: boolean;
+  isSyncingStars: boolean;
+  readmeSummary: ReadmeFetchSummary | null;
+  syncSummary: StarSyncSummary | null;
+  onExportAnnotations: () => void;
+  onFetchReadmes: () => void;
+  onImportAnnotations: (event: FormEvent<HTMLFormElement>) => void;
+  onSetGistIdDraft: (value: string) => void;
+  onSyncStars: () => void;
+};
+
+export function SyncPanel(props: SyncPanelProps) {
+  const disabled = !props.authState.user;
+
+  return (
+    <section className="rail-section">
+      <div className="rail-title">
+        <RefreshCw className="size-4" />
+        <strong>同步</strong>
+      </div>
+      <div className="grid gap-2">
+        <Button className="justify-start rounded-md" disabled={disabled || props.isSyncingStars} onClick={props.onSyncStars}>
+          <RefreshCw className="size-4" />
+          {props.isSyncingStars ? '同步中' : '同步 Stars'}
+        </Button>
+        <Button className="justify-start rounded-md" disabled={disabled || props.isFetchingReadmes} variant="outline" onClick={props.onFetchReadmes}>
+          <BookOpen className="size-4" />
+          {props.isFetchingReadmes ? '抓取中' : '抓取 README'}
+        </Button>
+        <Button className="justify-start rounded-md" disabled={disabled || props.isExportingAnnotations} variant="outline" onClick={props.onExportAnnotations}>
+          <Upload className="size-4" />
+          {props.isExportingAnnotations ? '导出中' : '导出注解'}
+        </Button>
+      </div>
+      <form className="grid grid-cols-[1fr_auto] gap-2" onSubmit={props.onImportAnnotations}>
+        <Input
+          value={props.gistIdDraft}
+          placeholder="Gist ID"
+          onChange={(event) => props.onSetGistIdDraft(event.target.value)}
+        />
+        <Button size="icon" variant="outline" className="rounded-md" disabled={disabled || props.isImportingAnnotations || props.gistIdDraft.trim().length === 0} title="导入注解" type="submit">
+          <Download className="size-4" />
+        </Button>
+      </form>
+      {props.syncSummary ? (
+        <p className="text-xs leading-5 text-muted-foreground">Stars：当前 {props.syncSummary.activeCount}，新增 {props.syncSummary.createdCount}，更新 {props.syncSummary.updatedCount}。</p>
+      ) : null}
+      {props.readmeSummary ? (
+        <p className="text-xs leading-5 text-muted-foreground">README：更新 {props.readmeSummary.fetchedCount}，跳过 {props.readmeSummary.skippedCount}，缺失 {props.readmeSummary.missingCount}。</p>
+      ) : null}
+    </section>
+  );
+}

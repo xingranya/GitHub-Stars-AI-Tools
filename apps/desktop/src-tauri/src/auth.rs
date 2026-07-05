@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -25,6 +26,10 @@ fn debug_log(run_id: &str, hypothesis_id: &str, location: &str, message: &str, d
         "data": data,
         "timestamp": timestamp,
     });
+
+    if let Some(parent) = Path::new(DEBUG_LOG_PATH).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
 
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
