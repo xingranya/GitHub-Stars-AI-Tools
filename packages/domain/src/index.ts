@@ -54,6 +54,7 @@ export type AiRepositoryDocument = {
 export type EmbeddingSourceKind = 'repository_knowledge';
 
 export type RepositoryEmbeddingRecord = {
+  accountId: GitHubAccountId;
   repoId: RepositoryId;
   sourceKind: EmbeddingSourceKind;
   sourceHash: string;
