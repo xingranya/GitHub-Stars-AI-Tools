@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://github.com/xingranya/GitHub-Stars-AI-Tools",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xingranya/GitHub-Stars-AI-Tools.git",
+    "directory": "packages/github"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -12,7 +19,8 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -b tsconfig.json",
+    "verify:provider": "node scripts/verify-provider.mjs"
   },
   "dependencies": {
     "@gsat/domain": "workspace:*"

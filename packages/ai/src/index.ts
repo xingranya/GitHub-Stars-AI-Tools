@@ -59,11 +59,11 @@ export type AiProvider = {
   metadata: AiProviderMetadata;
   summarizeReadme(input: SummarizeReadmeInput): Promise<AiRepositoryDocument>;
   translateReadme(input: TranslateReadmeInput): Promise<TranslateReadmeResult>;
-  embed(input: EmbeddingInput): Promise<EmbeddingResult>;
+  embed?: (input: EmbeddingInput) => Promise<EmbeddingResult>;
   understandQuery(query: string): Promise<QueryUnderstanding>;
 };
 
-export type RemoteAiProviderProtocol = 'openai' | 'anthropic';
+export type RemoteAiProviderProtocol = 'openai' | 'openai-compatible' | 'anthropic';
 
 export type RemoteAiProviderOptions = {
   provider: RemoteAiProviderProtocol;
@@ -91,24 +91,27 @@ type FetchLike = (
 const defaultGeneratedAt = (): ISODateString => new Date().toISOString();
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1';
-const DEFAULT_OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
 const MAX_README_CHARS = 18_000;
 
 /**
- * 创建真实远程 AI Provider，支持 OpenAI Chat Completions 协议和 Anthropic Messages 协议。
+ * 创建真实远程 AI 服务，支持 OpenAI Chat Completions 协议和 Anthropic Messages 协议。
  */
 export function createRemoteAiProvider(options: RemoteAiProviderOptions): AiProvider {
   const provider = options.provider;
+  const wireProtocol = normalizeWireProtocol(provider);
   const model = options.model.trim();
-  const embeddingModel = options.embeddingModel?.trim() || DEFAULT_OPENAI_EMBEDDING_MODEL;
+  const embeddingModel = options.embeddingModel?.trim() || null;
   const apiKey = options.apiKey.trim();
   const request = options.fetch ?? getGlobalFetch();
   const generatedAt = options.generatedAt ?? defaultGeneratedAt;
-  const capabilities: AiProviderCapability[] = provider === 'openai'
-    ? ['summarize_readme', 'translate_readme', 'understand_query', 'embed_text']
-    : ['summarize_readme', 'translate_readme', 'understand_query'];
+  const capabilities: AiProviderCapability[] = ['summarize_readme', 'translate_readme', 'understand_query'];
+  const canEmbedText = wireProtocol === 'openai' && embeddingModel !== null;
 
-  if (!apiKey) {
+  if (canEmbedText) {
+    capabilities.push('embed_text');
+  }
+
+  if (!apiKey && !canUseAiWithoutApiKey(provider, options.baseUrl)) {
     throw new Error('请先填写 AI API Key');
   }
 
@@ -116,17 +119,17 @@ export function createRemoteAiProvider(options: RemoteAiProviderOptions): AiProv
     throw new Error('请先填写 AI 模型 ID');
   }
 
-  return {
+  const remoteProvider: AiProvider = {
     metadata: {
       id: provider,
-      displayName: provider === 'openai' ? 'OpenAI Compatible Provider' : 'Anthropic Claude Provider',
+      displayName: provider === 'anthropic' ? 'Anthropic Claude 服务' : 'OpenAI 兼容服务',
       model,
       capabilities,
     },
 
     async summarizeReadme(input) {
       const content = await requestAiText({
-        provider,
+        provider: wireProtocol,
         request,
         apiKey,
         model,
@@ -150,7 +153,7 @@ export function createRemoteAiProvider(options: RemoteAiProviderOptions): AiProv
 
     async translateReadme(input) {
       const content = await requestAiText({
-        provider,
+        provider: wireProtocol,
         request,
         apiKey,
         model,
@@ -173,11 +176,23 @@ export function createRemoteAiProvider(options: RemoteAiProviderOptions): AiProv
       };
     },
 
-    async embed(input) {
-      if (provider !== 'openai') {
-        throw new Error('Anthropic Messages 协议不提供 Embedding 接口，请改用 OpenAI 兼容 Provider 生成向量索引。');
-      }
+    async understandQuery(query) {
+      const normalizedQuery = normalizeWhitespace(query);
+      const content = await requestAiText({
+        provider: wireProtocol,
+        request,
+        apiKey,
+        model,
+        baseUrl: options.baseUrl,
+        prompt: buildQueryUnderstandingPrompt(normalizedQuery),
+      });
 
+      return parseQueryUnderstanding(content, normalizedQuery);
+    },
+  };
+
+  if (canEmbedText && embeddingModel) {
+    remoteProvider.embed = async (input) => {
       const vector = await requestOpenAiEmbedding({
         request,
         apiKey,
@@ -192,23 +207,14 @@ export function createRemoteAiProvider(options: RemoteAiProviderOptions): AiProv
         model: embeddingModel,
         sourceHash: input.sourceHash,
       };
-    },
+    };
+  }
 
-    async understandQuery(query) {
-      const normalizedQuery = normalizeWhitespace(query);
-      const tokens = tokenize(normalizedQuery);
-
-      return {
-        normalizedQuery,
-        inferredLanguages: inferLanguages(tokens),
-        inferredTopics: tokens.filter((token) => token.length >= 3).slice(0, 8),
-      };
-    },
-  };
+  return remoteProvider;
 }
 
 type AiTextRequest = {
-  provider: RemoteAiProviderProtocol;
+  provider: 'openai' | 'anthropic';
   request: FetchLike;
   apiKey: string;
   model: string;
@@ -229,6 +235,12 @@ type ParsedAiJsonDocument = {
   readmeZh: string | null;
   keywords: string[];
   suggestedTags: string[];
+};
+
+type ParsedQueryUnderstanding = {
+  normalizedQuery: string;
+  inferredLanguages: string[];
+  inferredTopics: string[];
 };
 
 async function requestAiText(input: AiTextRequest) {
@@ -276,12 +288,16 @@ async function requestOpenAiText(
   model: string,
   prompt: string,
 ) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
   const response = await request(endpoint, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({
       model,
       temperature: 0.2,
@@ -298,7 +314,7 @@ async function requestOpenAiText(
   }
 
   const parsed = parseJsonValue(body);
-  const content = getPathString(parsed, ['choices', 0, 'message', 'content']);
+  const content = readOpenAiTextContent(parsed);
 
   if (!content) {
     throw new Error('OpenAI 响应中没有摘要内容');
@@ -336,7 +352,7 @@ async function requestAnthropicText(
   }
 
   const parsed = parseJsonValue(body);
-  const content = getPathString(parsed, ['content', 0, 'text']);
+  const content = readAnthropicTextContent(parsed);
 
   if (!content) {
     throw new Error('Anthropic 响应中没有摘要内容');
@@ -346,9 +362,13 @@ async function requestAnthropicText(
 }
 
 function buildTextEndpoint(provider: RemoteAiProviderProtocol, baseUrl: string | undefined) {
-  return provider === 'openai'
+  return normalizeWireProtocol(provider) === 'openai'
     ? buildOpenAiEndpoint(baseUrl, 'chat/completions')
     : buildProviderEndpoint(baseUrl, DEFAULT_ANTHROPIC_BASE_URL, 'messages');
+}
+
+function normalizeWireProtocol(provider: RemoteAiProviderProtocol): 'openai' | 'anthropic' {
+  return provider === 'anthropic' ? 'anthropic' : 'openai';
 }
 
 function buildOpenAiEndpoint(baseUrl: string | undefined, suffix: string) {
@@ -358,11 +378,59 @@ function buildOpenAiEndpoint(baseUrl: string | undefined, suffix: string) {
 function buildProviderEndpoint(baseUrl: string | undefined, defaultBaseUrl: string, suffix: string) {
   const normalizedBaseUrl = (baseUrl?.trim() || defaultBaseUrl).replace(/\/+$/u, '');
 
-  if (!/^https?:\/\//iu.test(normalizedBaseUrl)) {
-    throw new Error('AI 请求地址必须以 http:// 或 https:// 开头');
+  if (!isAllowedAiBaseUrl(normalizedBaseUrl)) {
+    throw new Error('AI 请求地址必须使用 https://；只有本机调试地址可以使用 http://。');
   }
 
   return normalizedBaseUrl.endsWith(suffix) ? normalizedBaseUrl : `${normalizedBaseUrl}/${suffix}`;
+}
+
+function isAllowedAiBaseUrl(baseUrl: string) {
+  const normalized = baseUrl.trim().toLowerCase();
+  if (normalized.startsWith('https://')) {
+    return true;
+  }
+
+  if (!normalized.startsWith('http://')) {
+    return false;
+  }
+
+  const hostWithPort = normalized
+    .slice('http://'.length)
+    .split(/[/?#]/u, 1)[0] ?? '';
+  if (!hostWithPort || hostWithPort.includes('@')) {
+    return false;
+  }
+
+  const host = hostWithPort.startsWith('[')
+    ? hostWithPort.slice(1).split(']', 1)[0] ?? ''
+    : hostWithPort.split(':', 1)[0] ?? '';
+
+  return ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(host);
+}
+
+function canUseAiWithoutApiKey(provider: RemoteAiProviderProtocol, baseUrl: string | undefined) {
+  return provider === 'openai-compatible' && isLocalAiBaseUrl(baseUrl);
+}
+
+function isLocalAiBaseUrl(baseUrl: string | undefined) {
+  if (!baseUrl) {
+    return false;
+  }
+
+  const normalized = baseUrl.trim().toLowerCase();
+  const hostWithPort = normalized
+    .replace(/^https?:\/\//u, '')
+    .split(/[/?#]/u, 1)[0] ?? '';
+  if (!hostWithPort || hostWithPort.includes('@') || hostWithPort === normalized) {
+    return false;
+  }
+
+  const host = hostWithPort.startsWith('[')
+    ? hostWithPort.slice(1).split(']', 1)[0] ?? ''
+    : hostWithPort.split(':', 1)[0] ?? '';
+
+  return ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(host);
 }
 
 function buildSummaryPrompt(repository: RepositoryFacts, readmeMarkdown: string) {
@@ -400,6 +468,26 @@ README:
 ${readme.excerpt}`;
 }
 
+function buildQueryUnderstandingPrompt(query: string) {
+  return `请理解用户对 GitHub Stars 知识库的检索需求，并提取可用于本地召回的结构化条件。
+
+要求：
+- normalized_query 保留用户真实意图，去掉寒暄和无关词。
+- inferred_languages 只放明确出现或强烈暗示的编程语言、框架生态语言，例如 TypeScript、Python、Rust、Go。
+- inferred_topics 放 3 到 8 个功能、场景、技术栈或关键词，适合本地匹配仓库名称、描述、README、标签和笔记。
+- 不要编造仓库名，不要输出 Markdown。
+
+输出必须是严格 JSON：
+{
+  "normalized_query": "React animation spring",
+  "inferred_languages": ["TypeScript"],
+  "inferred_topics": ["React", "animation", "spring"]
+}
+
+用户问题：
+${query}`;
+}
+
 function buildReadmeExcerpt(readmeMarkdown: string) {
   const excerpt = readmeMarkdown.slice(0, MAX_README_CHARS);
   const status = readmeMarkdown.length > MAX_README_CHARS
@@ -431,11 +519,76 @@ function extractJsonStringField(content: string, fieldName: string) {
   return readStringField(parsed, fieldName);
 }
 
-function extractJsonObject(content: string) {
-  const start = content.indexOf('{');
-  const end = content.lastIndexOf('}');
+function parseQueryUnderstanding(content: string, fallbackQuery: string): ParsedQueryUnderstanding {
+  const parsed = parseJsonValue(extractJsonObject(content) ?? content);
+  const normalizedQuery = readStringField(parsed, 'normalized_query')
+    ?? readStringField(parsed, 'normalizedQuery')
+    ?? fallbackQuery;
+  const languageHints = [
+    ...readStringListField(parsed, 'inferred_languages'),
+    ...readStringListField(parsed, 'inferredLanguages'),
+  ];
+  const topicHints = [
+    ...readStringListField(parsed, 'inferred_topics'),
+    ...readStringListField(parsed, 'inferredTopics'),
+  ];
 
-  return start >= 0 && end >= start ? content.slice(start, end + 1) : null;
+  return {
+    normalizedQuery,
+    inferredLanguages: uniqueStrings(languageHints).slice(0, 8),
+    inferredTopics: uniqueStrings(topicHints).slice(0, 8),
+  };
+}
+
+function extractJsonObject(content: string) {
+  for (let start = 0; start < content.length; start += 1) {
+    if (content[start] !== '{') {
+      continue;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < content.length; index += 1) {
+      const character = content[index];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (character === '\\') {
+          escaped = true;
+        } else if (character === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (character === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (character === '{') {
+        depth += 1;
+        continue;
+      }
+
+      if (character === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const candidate = content.slice(start, index + 1);
+          const parsed = parseJsonValue(candidate);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return candidate;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 function parseJsonValue(content: string): unknown {
@@ -477,6 +630,10 @@ function readStringListField(value: unknown, fieldName: string) {
   );
 }
 
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((item) => normalizeWhitespace(item)).filter(Boolean)));
+}
+
 function getPathString(value: unknown, path: Array<string | number>) {
   let current = value;
 
@@ -495,6 +652,74 @@ function getPathString(value: unknown, path: Array<string | number>) {
   }
 
   return typeof current === 'string' ? current : null;
+}
+
+function readOpenAiTextContent(value: unknown) {
+  const choices = getPathValue(value, ['choices']);
+  if (!Array.isArray(choices)) {
+    return null;
+  }
+
+  for (const choice of choices) {
+    const content = getPathValue(choice, ['message', 'content']);
+    const text = textFromContentValue(content);
+    if (text) {
+      return text;
+    }
+  }
+
+  return null;
+}
+
+function readAnthropicTextContent(value: unknown) {
+  const content = getPathValue(value, ['content']);
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  const text = content
+    .map((item) => getPathString(item, ['text']))
+    .filter((item): item is string => Boolean(item))
+    .join('\n');
+
+  return normalizeWhitespace(text) || null;
+}
+
+function textFromContentValue(value: unknown) {
+  if (typeof value === 'string') {
+    return normalizeWhitespace(value) || null;
+  }
+
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const text = value
+    .map((item) => getPathString(item, ['text']))
+    .filter((item): item is string => Boolean(item))
+    .join('\n');
+
+  return normalizeWhitespace(text) || null;
+}
+
+function getPathValue(value: unknown, path: Array<string | number>) {
+  let current = value;
+
+  for (const segment of path) {
+    if (typeof segment === 'number') {
+      if (!Array.isArray(current)) {
+        return null;
+      }
+      current = current[segment];
+    } else {
+      if (!current || typeof current !== 'object') {
+        return null;
+      }
+      current = (current as Record<string, unknown>)[segment];
+    }
+  }
+
+  return current;
 }
 
 function readNumberListPath(value: unknown, path: Array<string | number>) {
@@ -522,17 +747,72 @@ function readNumberListPath(value: unknown, path: Array<string | number>) {
 }
 
 function formatRemoteAiError(provider: string, status: number, body: string) {
-  const parsed = parseJsonValue(body);
-  const message = getPathString(parsed, ['error', 'message'])
-    ?? getPathString(parsed, ['error', 'type'])
-    ?? truncateText(normalizeWhitespace(body), 180)
-    ?? '接口没有返回错误详情';
+  const message = extractRemoteAiErrorMessage(body);
 
   if (isTokenLimitError(status, message)) {
     return `${provider} 接口请求失败（HTTP ${status}）：README 内容超过模型上下文限制，请换用更大上下文模型或降低 README 输入长度。`;
   }
 
   return `${provider} 接口请求失败（HTTP ${status}）：${message}`;
+}
+
+function extractRemoteAiErrorMessage(body: string) {
+  const normalizedBody = normalizeWhitespace(body);
+  if (!normalizedBody) {
+    return '响应体为空';
+  }
+
+  const parsed = parseJsonValue(body);
+  const message = findRemoteAiErrorMessage(parsed);
+
+  return message ?? truncateText(normalizedBody, 180) ?? '接口没有返回错误详情';
+}
+
+function findRemoteAiErrorMessage(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return normalizeWhitespace(value) || null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const message = findRemoteAiErrorMessage(item);
+      if (message) {
+        return message;
+      }
+    }
+    return null;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const object = value as Record<string, unknown>;
+  for (const key of ['message', 'detail', 'reason', 'type', 'error_description']) {
+    const message = findRemoteAiErrorMessage(object[key]);
+    if (message) {
+      return message;
+    }
+  }
+
+  const errorMessage = findRemoteAiErrorMessage(object.error);
+  if (errorMessage) {
+    return errorMessage;
+  }
+
+  const errorsMessage = findRemoteAiErrorMessage(object.errors);
+  if (errorsMessage) {
+    return errorsMessage;
+  }
+
+  for (const item of Object.values(object)) {
+    const message = findRemoteAiErrorMessage(item);
+    if (message) {
+      return message;
+    }
+  }
+
+  return null;
 }
 
 function isTokenLimitError(status: number, message: string) {
@@ -562,19 +842,6 @@ function getGlobalFetch() {
   }
 
   return fetchFn;
-}
-
-function inferLanguages(tokens: string[]) {
-  const languageNames = new Set(['typescript', 'javascript', 'rust', 'python', 'go', 'java', 'swift', 'kotlin', 'ruby']);
-
-  return tokens.filter((token) => languageNames.has(token.toLowerCase()));
-}
-
-function tokenize(value: string) {
-  return normalizeWhitespace(value)
-    .split(/[^\p{L}\p{N}+#.-]+/u)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0);
 }
 
 function normalizeWhitespace(value: string) {
