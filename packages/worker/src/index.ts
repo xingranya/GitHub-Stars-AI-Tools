@@ -132,6 +132,7 @@ export async function runReadmeAiPipeline(
   dependencies: Pick<WorkerDependencies, 'ai' | 'storage' | 'vectorIndex'>,
   input: ReadmeAiPipelineInput,
 ): Promise<ReadmeAiPipelineResult> {
+  const embed = input.includeEmbedding ? requireEmbeddingProvider(dependencies.ai) : null;
   const summarizedDocument = await dependencies.ai.summarizeReadme({
     repository: input.repository,
     readme: input.readme,
@@ -149,8 +150,8 @@ export async function runReadmeAiPipeline(
     readmeZh: translatedReadme?.readmeZh ?? summarizedDocument.readmeZh,
     sourceHash: input.readme.contentHash,
   };
-  const embedding = input.includeEmbedding
-    ? await dependencies.ai.embed({
+  const embedding = embed
+    ? await embed({
         repoId: input.repository.id,
         text: buildReadmeEmbeddingText(input.repository, input.readme, document),
         sourceHash: input.readme.contentHash,
@@ -161,6 +162,7 @@ export async function runReadmeAiPipeline(
 
   if (embedding) {
     const embeddingRecord = createRepositoryEmbeddingRecord({
+      repository: input.repository,
       embedding,
       modelVersion: input.embeddingModelVersion ?? dependencies.ai.metadata.model,
       generatedAt: currentIsoTimestamp(),
@@ -219,6 +221,7 @@ export async function buildRepositoryEmbeddingIndex(
   dependencies: Pick<WorkerDependencies, 'ai' | 'storage' | 'vectorIndex'>,
   input: BuildRepositoryEmbeddingIndexInput,
 ): Promise<BuildRepositoryEmbeddingIndexResult> {
+  const embed = requireEmbeddingProvider(dependencies.ai);
   const candidates = await dependencies.storage.listRepositoryEmbeddingCandidates(
     input.accountId,
     dependencies.ai.metadata.model,
@@ -242,12 +245,13 @@ export async function buildRepositoryEmbeddingIndex(
     }
 
     try {
-      const embedding = await dependencies.ai.embed({
+      const embedding = await embed({
         repoId: candidate.repository.id,
         text: buildRepositoryKnowledgeText(candidate.repository, candidate.aiDocument),
         sourceHash: candidate.aiDocument.sourceHash,
       });
       const embeddingRecord = createRepositoryEmbeddingRecord({
+        repository: candidate.repository,
         embedding,
         modelVersion: input.modelVersion,
         generatedAt: currentIsoTimestamp(),
@@ -420,11 +424,13 @@ export function createWorkerRuntime(dependencies: WorkerDependencies): WorkerRun
 }
 
 function createRepositoryEmbeddingRecord(input: {
+  repository: RepositoryFacts;
   embedding: EmbeddingResult;
   modelVersion: string;
   generatedAt: ISODateString;
 }): RepositoryEmbeddingRecord {
   return {
+    accountId: input.repository.accountId,
     repoId: input.embedding.repoId,
     sourceKind: 'repository_knowledge',
     sourceHash: input.embedding.sourceHash,
@@ -434,6 +440,14 @@ function createRepositoryEmbeddingRecord(input: {
     vector: input.embedding.vector,
     generatedAt: input.generatedAt,
   };
+}
+
+function requireEmbeddingProvider(ai: AiProvider) {
+  if (!ai.embed) {
+    throw new Error('当前 AI 服务未配置 Embedding 能力。普通知识库 AI 不需要向量模型；如需向量索引，请在高级设置中配置 OpenAI 兼容 Embedding 模型。');
+  }
+
+  return ai.embed;
 }
 
 function buildReadmeEmbeddingText(

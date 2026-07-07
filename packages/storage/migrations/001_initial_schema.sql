@@ -11,9 +11,12 @@ CREATE TABLE IF NOT EXISTS github_accounts (
   login TEXT NOT NULL UNIQUE,
   avatar_url TEXT,
   token_ref TEXT NOT NULL,
+  connection_status TEXT NOT NULL DEFAULT 'connected' CHECK (connection_status IN ('connected', 'disconnected')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_github_accounts_connection_status_updated ON github_accounts(connection_status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS repositories (
   id TEXT PRIMARY KEY,
@@ -63,6 +66,8 @@ CREATE TABLE IF NOT EXISTS repo_ai_documents (
   model TEXT NOT NULL,
   prompt_version TEXT NOT NULL,
   source_hash TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
   generated_at TEXT NOT NULL,
   FOREIGN KEY (repo_id) REFERENCES repositories(id) ON DELETE CASCADE
 );
@@ -140,6 +145,29 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_account_status ON jobs(account_id, status);
 CREATE INDEX IF NOT EXISTS idx_jobs_type_status ON jobs(type, status);
+
+CREATE TABLE IF NOT EXISTS github_recommendation_candidates (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  description TEXT,
+  language TEXT,
+  topics_json TEXT NOT NULL DEFAULT '[]',
+  html_url TEXT NOT NULL,
+  stars_count INTEGER NOT NULL DEFAULT 0,
+  forks_count INTEGER NOT NULL DEFAULT 0,
+  pushed_at TEXT,
+  status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'marked', 'ignored', 'starred')),
+  rationale_zh TEXT,
+  queries_json TEXT NOT NULL DEFAULT '[]',
+  last_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY (account_id) REFERENCES github_accounts(id) ON DELETE CASCADE,
+  UNIQUE (account_id, full_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_recommendation_candidates_account_status ON github_recommendation_candidates(account_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_recommendation_candidates_account_full_name ON github_recommendation_candidates(account_id, full_name);
 
 INSERT OR IGNORE INTO schema_migrations(version, name)
 VALUES ('001', 'initial_schema');
