@@ -14,9 +14,9 @@
   - Verify: `pnpm build:packages` 与 `pnpm build` 已通过。
   - Files: `packages/**`、`tsconfig.base.json`、`tsconfig.packages.json`、`package.json`、`pnpm-lock.yaml`
 
-- [x] Task 1.3: 建立本地 SQLite 与迁移机制
-  - Status: 已完成。核心表、迁移记录表、FTS 表、迁移清单和幂等验证脚本均已建立。
-  - Acceptance: 核心表可创建，migration 可重复执行。
+- [x] Task 1.3: 建立本地 SQLite 初始化机制
+  - Status: 已完成。核心表、schema 记录表、FTS 表、完整初始化 SQL 和幂等验证脚本均已建立；本机测试期旧 SQLite 不做迁移，结构不兼容时删除并重建。
+  - Acceptance: 核心表可创建，schema 初始化可重复执行。
   - Verify: `pnpm --filter @gsat/storage verify:migrations` 与 `pnpm build` 已通过。
   - Files: `packages/storage/**`
 
@@ -57,27 +57,27 @@
 - [x] Task 3.3: 关键词搜索与筛选
   - Status: 已完成。本地仓库查询已支持关键词、language、tag 组合筛选；关键词覆盖仓库名称、描述、语言、Topics 和用户笔记；前端 Star 工作台已接入搜索框、语言筛选、标签筛选和重置入口。
   - Acceptance: 支持关键词、language、tag 组合筛选。
-  - Verify: 关键文件静态诊断无新增错误；`pnpm build` / `cargo check` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。
+  - Verify: `pnpm verify:search`、`pnpm verify:view-ai-ui`、`pnpm verify:mvp`。
   - Files: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
 ## Phase 4: AI Knowledge MVP
 
-- [x] Task 4.1: AI Provider 抽象
-  - Status: 已完成。领域层补齐 `AiRepositoryDocument.readmeZh`；`ai` 包提供 Provider 元信息、能力声明、摘要、翻译、Embedding、查询理解标准接口，并提供不访问网络的 mock provider；`worker` 层通过标准接口编排 README 摘要、可选翻译、可选 Embedding，并把 AI 文档写回存储层。
-  - Acceptance: 业务层只依赖标准接口，mock provider 可测试。
-  - Verify: `packages/domain/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts` 静态诊断无新增错误；`pnpm build:packages` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。
+- [x] Task 4.1: AI 服务适配层
+  - Status: 已完成。领域层补齐 `AiRepositoryDocument.readmeZh`；`ai` 包提供 Provider 元信息、能力声明、摘要、翻译、查询理解标准接口，并保留可选 Embedding 边界但默认不启用；桌面后端已接入 OpenAI、OpenAI 兼容接口与 Anthropic，支持用户在应用内填写请求地址、API Key 和模型 ID。
+  - Acceptance: 业务层只依赖标准接口，桌面运行时使用真实远程 AI 协议，离线测试使用请求桩验证协议封装。
+  - Verify: `pnpm verify:ai`、`pnpm verify:settings-flow`、`pnpm verify:mvp`。
   - Files: `packages/domain/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts`
 
 - [x] Task 4.2: README 中文摘要
-  - Status: 已完成。`StoragePort` 已补齐 AI 文档读取与 README AI 候选项接口；`worker` 层新增批量摘要流程，按 README `contentHash` 跳过未变化内容；mock provider 输出中文用途摘要、关键词和推荐标签，可用于后续真实 Provider 接入前验证完整链路。
+  - Status: 已完成。`StoragePort` 已补齐 AI 文档读取与 README AI 候选项接口；桌面后端支持单仓与批量摘要，按 README `contentHash` 跳过未变化内容；AI 结果包含中文摘要、README 中文梳理、关键词、推荐标签与 token 用量。
   - Acceptance: 摘要、关键词、推荐标签可生成，hash 未变不重复生成。
-  - Verify: `packages/storage/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts` 静态诊断无新增错误；`pnpm build:packages` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。
+  - Verify: `pnpm verify:ai`、`pnpm verify:view-ai-ui`、`pnpm verify:task-feedback`。
   - Files: `packages/storage/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts`
 
 - [x] Task 4.3: 项目详情页中文展示
   - Status: 已完成。Tauri 后端新增仓库详情查询，按账号边界读取 README 缓存与 AI 派生文档；前端详情区展示 AI 中文摘要、关键词、推荐标签、README 原文、标签、阅读状态和用户笔记。AI 派生数据保持只读展示，不写入用户注解层。
   - Acceptance: 详情页展示中文摘要、README 原文、标签、笔记。
-  - Verify: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css` 静态诊断无新增错误；`pnpm build` / `cargo check` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。
+  - Verify: `pnpm verify:view-ai-ui`、`pnpm verify:task-feedback`、`pnpm verify:mvp`。
   - Files: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
 ## Phase 5: Natural Language Search
@@ -88,16 +88,16 @@
   - Verify: `packages/domain/src/index.ts`、`packages/search/src/index.ts` 静态诊断无新增错误；本机 `cargo check` 需要先清理旧目录构建缓存后复跑。
   - Files: `packages/domain/src/index.ts`、`packages/search/src/index.ts`
 
-- [x] Task 5.2: 向量索引
-  - Status: 已完成。领域层新增 `RepositoryEmbeddingRecord`，明确 `sourceHash`、`model`、`modelVersion`、维度和生成时间；存储层补齐向量候选、查询和保存接口；搜索层新增 `VectorIndexPort`；worker 层新增批量向量索引流程，并按 AI 文档 `sourceHash` 跳过内容未变化的仓库。
-  - Acceptance: 向量记录带 model_version/source_hash，内容未变不重复生成。
-  - Verify: 修改文件静态诊断无新增错误；`pnpm build:packages` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。固定召回测试将在 Task 5.3 混合检索实现后补齐。
+- [ ] Task 5.2: zvec 本地向量索引
+  - Status: 已规划，暂不进入当前上线主链路。当前产品知识库能力基于普通 OpenAI/Anthropic 聊天协议生成 README 摘要、关键词、标签建议，并结合本地 SQLite/README/笔记/标签做知识检索；不要求用户配置向量模型，也不自动调用 Embeddings 接口。`VectorIndexPort` 和 zvec 路线保留为后续可选增强。
+  - Acceptance: 向量记录带 model_version/source_hash，内容未变不重复生成，固定测试查询可召回预期仓库。
+  - Verify: 当前仅保留包层向量边界测试；桌面端上线验收不依赖向量模型。待后续明确需要 zvec 时，再补 zvec adapter 单测、独立索引目录、重建入口和性能回归。
   - Files: `packages/domain/src/index.ts`、`packages/storage/src/index.ts`、`packages/search/src/index.ts`、`packages/worker/src/index.ts`
 
 - [x] Task 5.3: 检索结果解释
-  - Status: 已完成。领域层 `SearchResult` 已扩展中文解释和引用片段；搜索层新增解释生成器，可从仓库事实、AI 文档、README、用户笔记和向量分数生成中文匹配理由；前端工作台在筛选结果卡片中展示当前命中依据和片段，后续自然语言检索命令可复用同一 UI 结构。
+  - Status: 已完成。领域层 `SearchResult` 已扩展中文解释和引用片段；搜索层新增解释生成器，可从仓库事实、AI 文档、README 和用户笔记生成中文匹配理由；自然语言搜索会携带最近对话上下文并复用同一结果解释结构。
   - Acceptance: 每个结果都有中文匹配理由和引用片段。
-  - Verify: 修改文件静态诊断无新增错误；`pnpm build` / `pnpm build:packages` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。Top 10 解释质量需在接入真实自然语言检索后人工检查。
+  - Verify: `pnpm verify:search`、`pnpm verify:ai-search-flow`、`pnpm verify:mvp`。
   - Files: `packages/domain/src/index.ts`、`packages/search/src/index.ts`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
 ## Phase 6: Long-term Usage
@@ -105,7 +105,7 @@
 - [x] Task 6.1: 增量同步与全量重扫
   - Status: 已完成。同步命令现在以 GitHub 全量 starred 列表作为事实来源执行本地对账：新 Star 幂等写入，已有 Star 更新事实字段，未出现在本次 GitHub 返回中的 active 仓库标记为 removed；标签、笔记、README 和 AI 派生数据不删除、不覆盖。同步结果返回 active、新增、更新、移除统计并在前端展示。
   - Acceptance: 新 Star 加入，unstar 标记 removed，不删除注解。
-  - Verify: 前端静态诊断无新增错误；`cargo fmt --check` / `cargo check` 当前受本机执行沙箱缺少 `sandbox-exec` 阻塞，需在本机终端直接复跑。真实新增与取消 Star 对账需连接 GitHub 后重复执行同步验证。
+  - Verify: `pnpm verify:sync-resilience`、`pnpm verify:github`、`pnpm verify:mvp`；真实新增与取消 Star 对账需连接 GitHub 后重复执行同步验证。
   - Files: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`
 
 - [x] Task 6.2: Gist 注解导入导出
@@ -114,7 +114,8 @@
   - Verify: 前端静态诊断无新增错误；`cargo fmt --check` / `cargo check` / `pnpm build` 当前需在本机终端复跑确认。真实导入导出一致性需连接 GitHub 后使用 Secret Gist ID 回归验证。
   - Files: `apps/desktop/src-tauri/src/auth.rs`、`apps/desktop/src-tauri/src/github.rs`、`apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
-- [ ] Task 6.3: 成本与任务监控
-  - Acceptance: 展示 AI 用量、失败任务、重试入口。
-  - Verify: 构造失败任务并重试。
-  - Files: `packages/worker/**`、`apps/desktop/src/**`
+- [x] Task 6.3: 成本与任务监控
+  - Status: 已完成。AI 摘要记录输入/输出 token 用量；全局任务卡展示阶段、进度、当前仓库和失败原因；同步、README、AI 摘要、Gist 导入导出失败后均有重试入口；发布包真实链路自检会持久化非敏感检查记录。
+  - Acceptance: 展示 AI 用量、失败任务、重试入口，并能区分运行中、完成、失败和部分失败。
+  - Verify: `pnpm verify:task-feedback`、`pnpm verify:settings-flow`、`pnpm verify:acceptance`。
+  - Files: `apps/desktop/src/**`、`apps/desktop/src-tauri/src/**`、`scripts/**`
