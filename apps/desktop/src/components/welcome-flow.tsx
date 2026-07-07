@@ -153,7 +153,7 @@ export function WelcomeFlow(props: WelcomeFlowProps) {
     ?? getFallbackWelcomeProgress(currentStep, isLoading, connectStatus);
 
   return (
-    <div className="welcome-surface fixed inset-x-0 bottom-0 top-titlebar z-40 overflow-y-auto bg-background px-4 py-4 sm:px-6 lg:px-8">
+    <div className="welcome-surface fixed inset-0 z-40 overflow-y-auto bg-background px-4 py-4 sm:px-6 lg:px-8">
       <main className="mx-auto flex min-h-full w-full max-w-5xl flex-col">
         <header className="flex flex-col gap-4 border-b border-card-border pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
