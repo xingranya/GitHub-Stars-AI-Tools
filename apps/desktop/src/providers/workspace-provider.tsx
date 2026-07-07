@@ -1,5 +1,5 @@
 /**
- * Workspace Context Provider
+ * 工作区上下文 Provider
  * 将 useStarsWorkspace 提升为全局 Context，所有页面共享单一状态实例
  * 解决原来 App / dashboard / repositories 三处各自实例化导致状态不共享、数据重复拉取的问题
  */

@@ -115,11 +115,13 @@
 .dark .glass-topbar {
   background: rgb(17 19 24 / 0.86);
   border-bottom-color: rgb(255 255 255 / 0.08);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.03), 0 16px 32px -28px rgb(0 0 0 / 0.9);
 }
 
 .dark .glass-panel {
   background: rgb(23 26 33 / 0.82);
   border-color: rgb(255 255 255 / 0.1);
+  box-shadow: 0 12px 32px -28px rgb(0 0 0 / 0.9);
 }
 
 .dark .glass-card {
@@ -163,6 +165,24 @@
 }
 .interactive-btn:active {
   transform: scale(0.98);
+}
+
+.gsat-primary-button,
+[class*="bg-primary"][class*="text-on-primary"],
+[class*="bg-primary"][class*="text-primary-foreground"],
+[class*="bg-primary-container"][class*="text-on-primary-container"] {
+  color: #ffffff !important;
+}
+
+.gsat-primary-button .material-symbols-outlined,
+.gsat-primary-button svg,
+[class*="bg-primary"][class*="text-on-primary"] .material-symbols-outlined,
+[class*="bg-primary"][class*="text-on-primary"] svg,
+[class*="bg-primary"][class*="text-primary-foreground"] .material-symbols-outlined,
+[class*="bg-primary"][class*="text-primary-foreground"] svg,
+[class*="bg-primary-container"][class*="text-on-primary-container"] .material-symbols-outlined,
+[class*="bg-primary-container"][class*="text-on-primary-container"] svg {
+  color: #ffffff !important;
 }
 
 .card-hover {
