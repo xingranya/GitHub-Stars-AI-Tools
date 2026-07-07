@@ -162,6 +162,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
           import { readFileSync } from 'node:fs';
 
           const expectedVersion = process.env.RELEASE_VERSION;
@@ -187,13 +188,18 @@ jobs:
             throw new Error(`Cargo.toml 版本号为 ${cargoVersion ?? '空'}，预期为 ${expectedVersion}`);
           }
 
-          const cargoLock = readFileSync('apps/desktop/src-tauri/Cargo.lock', 'utf8').replace(/\r\n/g, '\n');
-          const localPackageBlock = cargoLock
-            .split('\n[[package]]\n')
-            .find((block) => /^name = "gsat-desktop"$/m.test(block));
-          const localPackage = localPackageBlock?.match(/^version = "([^"]+)"$/m)?.[1];
-          if (localPackage !== expectedVersion) {
-            throw new Error(`Cargo.lock 中 gsat-desktop 版本号为 ${localPackage ?? '空'}，预期为 ${expectedVersion}`);
+          const metadata = JSON.parse(execFileSync('cargo', [
+            'metadata',
+            '--manifest-path',
+            'apps/desktop/src-tauri/Cargo.toml',
+            '--format-version',
+            '1',
+            '--locked',
+            '--no-deps',
+          ], { encoding: 'utf8' }));
+          const localPackageVersion = metadata.packages.find((pkg) => pkg.name === 'gsat-desktop')?.version;
+          if (localPackageVersion !== expectedVersion) {
+            throw new Error(`cargo metadata 中 gsat-desktop 版本号为 ${localPackageVersion ?? '空'}，预期为 ${expectedVersion}`);
           }
           NODE
 

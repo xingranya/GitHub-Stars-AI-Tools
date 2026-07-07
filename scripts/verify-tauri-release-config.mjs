@@ -66,7 +66,7 @@ assert.match(workflow, /args:\s*\$\{\{ matrix\.args \}\}/, 'Release workflow 必
 assert.match(workflow, /Sync release version/, 'Release workflow 必须在构建前同步安装包内部版本号');
 assert.match(workflow, /Refresh Cargo lockfile[\s\S]*?cargo metadata --manifest-path apps\/desktop\/src-tauri\/Cargo\.toml --format-version 1/, 'Release workflow 必须在同步 Cargo.toml 后刷新 Cargo.lock');
 assert.match(workflow, /Verify synced release version/, 'Release workflow 必须在同步版本号后复核配置一致性');
-assert.match(workflow, /Cargo\.lock 中 gsat-desktop 版本号/, 'Release workflow 必须复核 Cargo.lock 中本地 crate 版本号');
+assert.match(workflow, /cargo metadata 中 gsat-desktop 版本号/, 'Release workflow 必须通过 cargo metadata 复核本地 crate 版本号');
 assert.match(workflow, /apps\/desktop\/src-tauri\/tauri\.conf\.json/, 'Release workflow 必须同步 Tauri 配置版本');
 assert.match(workflow, /apps\/desktop\/src-tauri\/Cargo\.toml/, 'Release workflow 必须同步 Rust crate 版本');
 assert.match(workflow, /apps\/desktop\/package\.json/, 'Release workflow 必须同步桌面 package 版本');
