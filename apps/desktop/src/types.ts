@@ -40,7 +40,7 @@ export type ReadmeFetchSummary = {
 export type TaskProgressEvent = {
   taskId: string;
   taskType: 'sync' | 'readme' | 'ai' | string;
-  status: 'running' | 'succeeded' | 'failed' | string;
+  status: 'running' | 'succeeded' | 'failed' | 'partial' | string;
   stage: string;
   current: number;
   total: number;
@@ -88,6 +88,8 @@ export type RepositoryListItem = {
   aiSummary: string | null;
   aiKeywords: string[];
   suggestedTags: string[];
+  tagIds: string[];
+  tagNames: string[];
   aiGeneratedAt: string | null;
 };
 
@@ -146,6 +148,8 @@ export type RepositoryAiDocumentView = {
   model: string;
   promptVersion: string;
   sourceHash: string;
+  inputTokens: number;
+  outputTokens: number;
   generatedAt: string;
 };
 
@@ -186,11 +190,33 @@ export type DashboardStats = {
   totalStars: number;
   totalReadmes: number;
   totalAiSummaries: number;
+  totalAiInputTokens: number;
+  totalAiOutputTokens: number;
   totalTags: number;
   totalNotes: number;
   languageDistribution: LanguageDistributionItem[];
   recentRepos: RepositoryListItem[];
   lastSyncAt: string | null;
+};
+
+export type RuntimeReadinessCheckStatus = 'passed' | 'failed' | 'skipped';
+
+export type RuntimeReadinessCheckItem = {
+  status: RuntimeReadinessCheckStatus;
+  message: string;
+  detail: string | null;
+  action: string | null;
+};
+
+export type RuntimeReadinessCheckResult = {
+  storage: RuntimeReadinessCheckItem;
+  settings: RuntimeReadinessCheckItem;
+  github: RuntimeReadinessCheckItem;
+  stars: RuntimeReadinessCheckItem;
+  readme: RuntimeReadinessCheckItem;
+  ai: RuntimeReadinessCheckItem;
+  tagNetwork: RuntimeReadinessCheckItem;
+  recommendation: RuntimeReadinessCheckItem;
 };
 
 /* ===========================================================================
@@ -221,9 +247,13 @@ export type AiTagNetworkSummary = {
   tagCount: number;
   linkedCount: number;
   skippedRepositoryCount: number;
+  failedBatchCount: number;
+  failures: string[];
 };
 
 export type GithubRepositoryRecommendation = {
+  candidateId: string | null;
+  candidateStatus: 'new' | 'marked' | 'ignored' | 'starred' | null;
   fullName: string;
   description: string | null;
   language: string | null;
@@ -237,6 +267,7 @@ export type GithubRepositoryRecommendation = {
 export type GithubRecommendationResponse = {
   rationaleZh: string;
   queries: string[];
+  searchFailures: { query: string; error: string }[];
   results: GithubRepositoryRecommendation[];
 };
 
@@ -256,15 +287,22 @@ export type AiSearchResult = {
   score: number;
   explanationZh: string;
   reasons: SearchMatchReasonView[];
+  citations: SearchCitationView[];
   keywords: string[];
   aiSummary: string | null;
 };
 
 export type AiSearchResponse = {
   query: string;
-  mode: 'local_knowledge' | 'keyword' | 'natural_language' | 'hybrid';
+  mode: 'local_knowledge' | 'keyword' | 'natural_language' | 'hybrid' | 'ai_enhanced';
   results: AiSearchResult[];
   totalCount: number;
+  contextQueriesUsed: string[];
+  contextApplied: boolean;
+  aiEnhanced: boolean;
+  aiQuery: string | null;
+  aiRationaleZh: string | null;
+  aiError: string | null;
 };
 
 /* ===========================================================================
@@ -274,6 +312,8 @@ export type ProfileStats = {
   totalStars: number;
   totalNotes: number;
   totalAiWords: number;
+  totalAiInputTokens: number;
+  totalAiOutputTokens: number;
   languageBreakdown: { language: string; count: number; percentage: number }[];
   monthlyTrend: { month: string; count: number }[];
   recentRepos: RepositoryListItem[];
