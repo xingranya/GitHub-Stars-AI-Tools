@@ -22,15 +22,15 @@ export function SystemPanel(props: SystemPanelProps) {
       <div className="grid gap-2 rounded-lg bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
         <span className="flex items-center gap-2">
           <span className="size-1.5 rounded-full bg-success" />
-          {props.status?.backend ?? 'Rust 后端等待连接'}
+          {props.status?.backend ?? '本地服务正在启动'}
         </span>
         <span className="flex items-center gap-2">
           <span className="size-1.5 rounded-full bg-warning" />
-          {props.status?.worker ?? 'Worker 等待连接'}
+          {props.status?.worker ?? '后台任务正在准备'}
         </span>
         <span className="flex items-center gap-2">
           <span className="size-1.5 rounded-full bg-muted-foreground" />
-          {props.status?.provider ?? 'AI Provider 待配置'}
+          {props.status?.provider ?? 'AI 接口待配置'}
         </span>
       </div>
     </section>
