@@ -1,5 +1,5 @@
 /**
- * Settings Context Provider
+ * 全局设置上下文 Provider
  * 全局设置状态共享
  */
 
@@ -33,6 +33,7 @@ export function useAppSettings(): SettingsContextValue {
 function applyThemeSettings(settings: AppSettings) {
   const root = document.documentElement;
   const brandColor = settings.theme.brandColor || '#3b82f6';
+  const primaryForeground = getReadableForegroundColor(brandColor);
   const fontScale = getFontScale(settings.theme.fontSize);
   const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -43,7 +44,10 @@ function applyThemeSettings(settings: AppSettings) {
   };
 
   root.style.setProperty('--color-primary', brandColor);
+  root.style.setProperty('--color-on-primary', primaryForeground);
+  root.style.setProperty('--color-primary-foreground', primaryForeground);
   root.style.setProperty('--color-primary-container', brandColor);
+  root.style.setProperty('--color-on-primary-container', primaryForeground);
   root.style.setProperty('--color-ring', brandColor);
   root.style.setProperty('--color-accent', colorWithAlpha(brandColor, 0.12));
   root.style.setProperty('--color-accent-foreground', brandColor);
@@ -87,3 +91,55 @@ function colorWithAlpha(color: string, alpha: number) {
 
   return color;
 }
+
+function getReadableForegroundColor(backgroundColor: string) {
+  const rgb = hexToRgb(backgroundColor);
+  if (!rgb) {
+    return '#ffffff';
+  }
+
+  const lightForeground = '#ffffff';
+  const darkForeground = '#111827';
+  const lightContrast = getContrastRatio(rgb, hexToRgb(lightForeground)!);
+  const darkContrast = getContrastRatio(rgb, hexToRgb(darkForeground)!);
+  return lightContrast >= darkContrast ? lightForeground : darkForeground;
+}
+
+function getContrastRatio(firstColor: RgbColor, secondColor: RgbColor) {
+  const firstLuminance = getRelativeLuminance(firstColor);
+  const secondLuminance = getRelativeLuminance(secondColor);
+  const lighter = Math.max(firstLuminance, secondLuminance);
+  const darker = Math.min(firstLuminance, secondLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function getRelativeLuminance(color: RgbColor) {
+  const [red, green, blue] = color.map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function hexToRgb(color: string): RgbColor | null {
+  const normalizedColor = color.trim();
+  const shortMatch = normalizedColor.match(/^#([0-9a-f]{3})$/i);
+  if (shortMatch) {
+    return shortMatch[1].split('').map((channel) => parseInt(`${channel}${channel}`, 16)) as RgbColor;
+  }
+
+  const longMatch = normalizedColor.match(/^#([0-9a-f]{6})$/i);
+  if (!longMatch) {
+    return null;
+  }
+
+  return [
+    parseInt(longMatch[1].slice(0, 2), 16),
+    parseInt(longMatch[1].slice(2, 4), 16),
+    parseInt(longMatch[1].slice(4, 6), 16),
+  ];
+}
+
+type RgbColor = [number, number, number];

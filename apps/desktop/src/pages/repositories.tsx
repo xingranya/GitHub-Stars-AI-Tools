@@ -1,14 +1,12 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import ReactMarkdown, { type Components } from 'react-markdown';
-import rehypeRaw from 'rehype-raw';
-import rehypeSanitize from 'rehype-sanitize';
-import remarkGfm from 'remark-gfm';
 import { useWorkspace } from '@/providers/workspace-provider';
 import { useAppSettings } from '@/providers/settings-provider';
+import { ReadmeRenderer } from '@/components/readme-renderer';
 import { Icon } from '@/components/ui/icon';
-import { getAiConfigMessage } from '@/lib/ai-config';
+import { getAiConfigMessage, shouldFlushAiApiKey } from '@/lib/ai-config';
 import { compactNumber } from '@/lib/format';
+import { computeVirtualWindow } from '@/lib/virtual-list';
 import type {
   GithubRecommendationResponse,
   ReadingStatus,
@@ -17,6 +15,9 @@ import type {
   RepositoryListItem,
   TagItem,
 } from '@/types';
+
+type RecommendationCandidateStatus = 'new' | 'marked' | 'ignored' | 'starred';
+type RecommendationCandidateAction = 'star' | 'mark' | 'ignore';
 
 const LANGUAGE_COLORS: Record<string, string> = {
   TypeScript: '#3178C6',
@@ -42,14 +43,67 @@ function getLanguageColor(language: string | null): string {
   return LANGUAGE_COLORS[language] ?? '#c3c6d7';
 }
 
+function removeRecommendationCandidateRecord<T>(record: Record<string, T>, fullName: string): Record<string, T> {
+  const next = { ...record };
+  delete next[fullName];
+  return next;
+}
+
+function toPageErrorMessage(reason: unknown) {
+  if (reason instanceof Error) return reason.message;
+  return String(reason);
+}
+
+function getBatchAiLimitValue(limit: BatchAiLimit) {
+  if (limit === 'all') {
+    return undefined;
+  }
+
+  return Number(limit);
+}
+
+function repositoryMatchesLocalFilters(repo: RepositoryListItem, filters: { keyword: string; language: string; tagId: string }) {
+  if (filters.language && repo.language !== filters.language) {
+    return false;
+  }
+
+  if (filters.tagId && !repo.tagIds.includes(filters.tagId)) {
+    return false;
+  }
+
+  const keyword = filters.keyword.trim().toLowerCase();
+  if (!keyword) {
+    return true;
+  }
+
+  const searchableText = [
+    repo.fullName,
+    repo.owner,
+    repo.name,
+    repo.description ?? '',
+    repo.language ?? '',
+    ...repo.topics,
+    repo.aiSummary ?? '',
+    ...repo.aiKeywords,
+    ...repo.suggestedTags,
+    ...repo.tagNames,
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  return searchableText.includes(keyword);
+}
+
 type SortBy = 'recent' | 'stars' | 'name';
 type ViewMode = 'detail' | 'table';
-const REPOSITORY_CARD_HEIGHT = 92;
+type BatchAiLimit = 'all' | '50' | '100' | '300';
+const REPOSITORY_CARD_HEIGHT = 108;
 const REPOSITORY_CARD_GAP = 6;
 const REPOSITORY_ROW_HEIGHT = REPOSITORY_CARD_HEIGHT + REPOSITORY_CARD_GAP;
 const REPOSITORY_TABLE_ROW_HEIGHT = 64;
 const REPOSITORY_TABLE_HEADER_HEIGHT = 33;
 const LIST_OVERSCAN = 8;
+const MAX_RECOMMENDATION_SELECTION = 8;
 
 type RepositoriesPageProps = {
   navigationKey?: number;
@@ -67,12 +121,12 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
   const [selectedTagId, setSelectedTagId] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('recent');
   const [viewMode, setViewMode] = useState<ViewMode>('detail');
+  const [batchAiLimit, setBatchAiLimit] = useState<BatchAiLimit>('all');
   const [listScrollTop, setListScrollTop] = useState(0);
   const [listViewportHeight, setListViewportHeight] = useState(720);
   const [recommendationSelection, setRecommendationSelection] = useState<Set<string>>(() => new Set());
-  const [isFindingSimilar, setIsFindingSimilar] = useState(false);
-  const [recommendationError, setRecommendationError] = useState<string | null>(null);
-  const [recommendationResponse, setRecommendationResponse] = useState<GithubRecommendationResponse | null>(null);
+  const [recommendationCandidatePending, setRecommendationCandidatePending] = useState<Record<string, RecommendationCandidateAction>>({});
+  const [recommendationCandidateErrors, setRecommendationCandidateErrors] = useState<Record<string, string>>({});
   const listViewportRef = useRef<HTMLDivElement | null>(null);
 
   const resetListScroll = useCallback(() => {
@@ -129,11 +183,24 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
     resetListScroll();
   }, [searchKeyword, selectedLanguage, selectedTagId, sortBy, viewMode, resetListScroll]);
 
-  // 应用筛选和排序
+  const hasPendingRepositoryFilters = workspace.isLoadingRepositories || (
+    searchKeyword.trim() !== workspace.repositoryFilters.keyword.trim()
+    || selectedLanguage !== workspace.repositoryFilters.language
+    || selectedTagId !== workspace.repositoryFilters.tagId
+  );
+
+  // 后端负责完整 SQLite 检索；请求返回前先用本地已加载数据做即时筛选。
   const filteredRepos = useMemo(() => {
     if (!workspace.repositoryPage) return [];
 
     let repos = [...workspace.repositoryPage.items];
+    if (hasPendingRepositoryFilters) {
+      repos = repos.filter((repo) => repositoryMatchesLocalFilters(repo, {
+        keyword: searchKeyword,
+        language: selectedLanguage,
+        tagId: selectedTagId,
+      }));
+    }
 
     repos.sort((a, b) => {
       switch (sortBy) {
@@ -148,36 +215,79 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
     });
 
     return repos;
-  }, [workspace.repositoryPage, sortBy]);
+  }, [workspace.repositoryPage, hasPendingRepositoryFilters, searchKeyword, selectedLanguage, selectedTagId, sortBy]);
 
   const selectedRepo = workspace.selectedRepository;
   const aiConfigMessage = getAiConfigMessage(settingsHook.settings.ai);
   const autoSummaryConfigMessage = settingsHook.settings.ai.enableAutoSummary ? aiConfigMessage : null;
   const visibleWindow = useMemo(() => {
     const rowHeight = viewMode === 'table' ? REPOSITORY_TABLE_ROW_HEIGHT : REPOSITORY_ROW_HEIGHT;
-    const contentScrollTop = Math.max(
-      0,
-      listScrollTop - (viewMode === 'table' ? REPOSITORY_TABLE_HEADER_HEIGHT : 0),
-    );
-    const startIndex = Math.max(0, Math.floor(contentScrollTop / rowHeight) - LIST_OVERSCAN);
-    const visibleCount = Math.ceil(listViewportHeight / rowHeight) + LIST_OVERSCAN * 2;
-    const endIndex = Math.min(filteredRepos.length, startIndex + visibleCount);
-    return {
-      startIndex,
-      endIndex,
-      items: filteredRepos.slice(startIndex, endIndex),
-      totalHeight: filteredRepos.length * rowHeight,
-      offsetY: startIndex * rowHeight,
-    };
+    return computeVirtualWindow({
+      items: filteredRepos,
+      scrollTop: listScrollTop,
+      viewportHeight: listViewportHeight,
+      rowHeight,
+      overscan: LIST_OVERSCAN,
+      stickyHeaderHeight: viewMode === 'table' ? REPOSITORY_TABLE_HEADER_HEIGHT : 0,
+    });
   }, [filteredRepos, listScrollTop, listViewportHeight, viewMode]);
   const hasActiveFilters = Boolean(searchKeyword.trim() || selectedLanguage || selectedTagId);
+  const batchTargetRepositoryIds = hasActiveFilters ? filteredRepos.map((repository) => repository.id) : undefined;
+  const batchTargetCount = batchTargetRepositoryIds?.length ?? workspace.repositoryStats.total;
+  const hasBatchTargets = batchTargetCount > 0;
+  const batchTargetScopeLabel = batchTargetRepositoryIds
+    ? `当前列表 ${batchTargetCount} 个仓库`
+    : '全部 Stars';
   const selectedRecommendationIds = Array.from(recommendationSelection);
+  const hasReachedRecommendationSelectionLimit = selectedRecommendationIds.length >= MAX_RECOMMENDATION_SELECTION;
+  const hasConnectedUser = Boolean(workspace.authState.user);
+  const recommendationActionNotice = !hasConnectedUser
+    ? '请先连接 GitHub 账号，随后可同步 Stars、缓存 README 并使用 AI 功能。'
+    : selectedRecommendationIds.length === 0
+      ? `勾选 1 到 ${MAX_RECOMMENDATION_SELECTION} 个仓库后，可以让 AI 在 GitHub 上寻找相似或更优项目。`
+      : aiConfigMessage
+        ? aiConfigMessage
+        : hasReachedRecommendationSelectionLimit
+          ? `已选择 ${MAX_RECOMMENDATION_SELECTION} 个参考仓库，取消一个后可以继续更换参考对象。`
+          : null;
+  const recommendationActionNoticeTone = !hasConnectedUser || Boolean(aiConfigMessage) ? 'error' : 'muted';
+  const readmeActionTitle = !hasConnectedUser
+    ? '请先连接 GitHub 账号'
+    : !hasBatchTargets
+      ? '当前列表没有可处理仓库'
+    : settingsHook.settings.ai.enableAutoSummary
+      ? autoSummaryConfigMessage ?? '抓取 README 后生成 AI 摘要'
+      : '抓取 README';
+  const batchAiActionTitle = !hasConnectedUser
+    ? '请先连接 GitHub 账号'
+    : !hasBatchTargets
+      ? '当前列表没有可处理仓库'
+      : aiConfigMessage ?? '批量生成 AI 摘要';
+  const batchAiActionNotice = !hasConnectedUser
+    ? '请先连接 GitHub 账号，随后可批量生成 AI 摘要。'
+    : !hasBatchTargets
+      ? '当前列表没有可处理仓库，请调整筛选条件后再批量解析。'
+    : aiConfigMessage
+      ? aiConfigMessage
+      : `批量 AI 会自动补抓缺失 README，仅跳过已是最新摘要的仓库；本次处理${batchTargetScopeLabel}，失败项会保留在结果里，不影响已生成内容。`;
+  const batchAiActionNoticeTone = !hasConnectedUser || !hasBatchTargets || Boolean(aiConfigMessage) ? 'error' : 'muted';
+  const batchAiLimitValue = getBatchAiLimitValue(batchAiLimit);
+  const batchAiLimitLabel = batchAiLimitValue
+    ? `${batchTargetScopeLabel}，最多解析 ${batchAiLimitValue} 个`
+    : `${batchTargetScopeLabel}，不限制数量`;
+  const recommendationActionTitle = !hasConnectedUser
+    ? '请先连接 GitHub 账号'
+    : selectedRecommendationIds.length === 0
+      ? `请先勾选 1 到 ${MAX_RECOMMENDATION_SELECTION} 个参考仓库`
+      : aiConfigMessage ?? '根据勾选仓库在 GitHub 寻找相似或更优项目';
 
   function toggleRecommendationSelection(repositoryId: string) {
     setRecommendationSelection((current) => {
       const next = new Set(current);
       if (next.has(repositoryId)) {
         next.delete(repositoryId);
+      } else if (next.size >= MAX_RECOMMENDATION_SELECTION) {
+        return current;
       } else {
         next.add(repositoryId);
       }
@@ -186,60 +296,63 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
   }
 
   async function handleFindSimilarOnGithub() {
-    if (!workspace.authState.user) {
-      setRecommendationError('请先连接 GitHub 账号。');
-      return;
-    }
-    if (selectedRecommendationIds.length === 0) {
-      setRecommendationError('请先勾选 1 到 8 个仓库作为参考。');
-      return;
-    }
-    const aiMessage = getAiConfigMessage(settingsHook.settings.ai);
-    if (aiMessage) {
-      setRecommendationError(aiMessage);
-      return;
-    }
+    await runAiWorkspaceAction(() => workspace.handleFindSimilarRepositories(settingsHook.settings.ai, selectedRecommendationIds));
+  }
 
-    setIsFindingSimilar(true);
-    setRecommendationError(null);
+  async function runAiWorkspaceAction(action: () => Promise<unknown>) {
     try {
-      const response = await invoke<GithubRecommendationResponse>('recommend_github_repositories', {
-        request: {
-          accountId: String(workspace.authState.user.id),
-          repositoryIds: selectedRecommendationIds.slice(0, 8),
-          aiConfig: {
-            provider: settingsHook.settings.ai.provider,
-            baseUrl: settingsHook.settings.ai.baseUrl,
-            apiKey: settingsHook.settings.ai.apiKey,
-            model: settingsHook.settings.ai.model,
-          },
-          limit: 12,
-        },
-      });
-      setRecommendationResponse(response);
+      if (shouldFlushAiApiKey(settingsHook.settings.ai)) {
+        await settingsHook.flushAIKey(settingsHook.settings.ai.apiKey);
+      }
+      await action();
+    } catch {
+      // workspace 和 settings hook 已负责展示可见错误
+    }
+  }
+
+  async function handleUpdateRecommendationCandidate(fullName: string, status: Exclude<RecommendationCandidateStatus, 'starred'>) {
+    const action: RecommendationCandidateAction = status === 'ignored' ? 'ignore' : 'mark';
+    await runRecommendationCandidateAction(fullName, action, () => workspace.handleUpdateRecommendationCandidate(fullName, status));
+  }
+
+  async function handleStarRecommendationCandidate(fullName: string) {
+    await runRecommendationCandidateAction(fullName, 'star', () => workspace.handleStarRecommendationCandidate(fullName));
+  }
+
+  async function runRecommendationCandidateAction(
+    fullName: string,
+    action: RecommendationCandidateAction,
+    execute: () => Promise<void>,
+  ) {
+    setRecommendationCandidatePending((current) => ({ ...current, [fullName]: action }));
+    setRecommendationCandidateErrors((current) => removeRecommendationCandidateRecord(current, fullName));
+    try {
+      await execute();
     } catch (reason) {
-      setRecommendationError(reason instanceof Error ? reason.message : String(reason));
+      setRecommendationCandidateErrors((current) => ({
+        ...current,
+        [fullName]: toPageErrorMessage(reason),
+      }));
     } finally {
-      setIsFindingSimilar(false);
+      setRecommendationCandidatePending((current) => removeRecommendationCandidateRecord(current, fullName));
     }
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col gap-4 overflow-hidden p-3 sm:p-4 lg:gap-5 lg:p-5 xl:flex-row xl:gap-6 xl:p-6">
-      {/* Left Pane: Repo List */}
+    <div className="grid h-full min-w-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-3 sm:p-4 lg:gap-5 lg:p-5 xl:grid-cols-[minmax(280px,28vw,400px)_minmax(0,1fr)] xl:gap-5 xl:p-6 2xl:grid-cols-[minmax(300px,25vw,420px)_minmax(0,1fr)]">
+      {/* 左侧仓库列表 */}
       <div
-        className={`flex min-w-0 flex-col overflow-hidden rounded-xl border border-card-border bg-surface-container-low shadow-sm ${
-          viewMode === 'table'
-            ? 'min-h-0 flex-1'
-            : 'h-[min(42dvh,460px)] shrink-0 xl:h-full xl:w-[clamp(300px,32vw,440px)]'
-        }`}
+        className="flex h-[min(40dvh,420px)] min-h-[260px] min-w-0 flex-col overflow-hidden rounded-xl border border-card-border bg-surface-container-low shadow-sm xl:h-full"
       >
-        {/* List Header & Controls */}
-        <div className="p-4 border-b border-outline-variant/20 bg-surface/50 backdrop-blur-md shrink-0">
+        {/* 列表标题与控制区 */}
+        <div className="shrink-0 border-b border-outline-variant/20 bg-surface/50 p-3 backdrop-blur-md sm:p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h1 className="font-headline-md text-headline-md font-bold text-on-surface tracking-tight">
-              知识库列表
-            </h1>
+            <div className="min-w-0">
+              <h1 className="font-headline-md text-lg font-bold tracking-tight text-on-surface">知识库</h1>
+              <p className="mt-0.5 truncate text-xs text-on-surface-variant">
+                {compactNumber(filteredRepos.length)} / {compactNumber(workspace.repositoryStats.total)} 个仓库
+              </p>
+            </div>
             <div className="flex shrink-0 rounded-lg border border-outline-variant/30 bg-surface p-0.5">
               <button
                 type="button"
@@ -248,7 +361,7 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                   resetListScroll();
                 }}
                 className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
-                  viewMode === 'detail' ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:text-on-surface'
+                  viewMode === 'detail' ? 'bg-primary text-white' : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
                 卡片
@@ -260,71 +373,118 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                   resetListScroll();
                 }}
                 className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
-                  viewMode === 'table' ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:text-on-surface'
+                  viewMode === 'table' ? 'bg-primary text-white' : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
                 表格
               </button>
             </div>
           </div>
-          <div className="flex gap-2 mb-3">
-            <button
-              onClick={() =>
-                void workspace
-                  .handleFetchReadmes({
-                    aiConfig: settingsHook.settings.ai,
-                    autoGenerateAi: settingsHook.settings.ai.enableAutoSummary,
-                    aiLimit: 50,
+          <details className="mb-3 rounded-lg border border-outline-variant/25 bg-surface-container-low/70 px-3 py-2">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-on-surface marker:hidden">
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <Icon name="bolt" size={15} className="text-primary" />
+                批量处理
+              </span>
+              <span className="text-[11px] font-normal text-on-surface-variant">
+                README、AI、相似发现
+              </span>
+            </summary>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() =>
+                  void (async () => {
+                    if (settingsHook.settings.ai.enableAutoSummary && shouldFlushAiApiKey(settingsHook.settings.ai)) {
+                      await settingsHook.flushAIKey(settingsHook.settings.ai.apiKey);
+                    }
+                    await workspace.handleFetchReadmes({
+                      aiConfig: settingsHook.settings.ai,
+                      autoGenerateAi: settingsHook.settings.ai.enableAutoSummary,
+                      aiLimit: batchAiLimitValue,
+                      onlyMissing: true,
+                      repositoryIds: batchTargetRepositoryIds,
+                    });
+                  })().catch(() => undefined)
+                }
+                disabled={
+                  workspace.isFetchingReadmes ||
+                  workspace.isBatchGeneratingAiDocuments ||
+                  !hasConnectedUser ||
+                  !hasBatchTargets ||
+                  Boolean(autoSummaryConfigMessage)
+                }
+                title={readmeActionTitle}
+                className="flex-1 px-3 py-1.5 rounded-lg bg-surface border border-outline-variant/40 text-xs text-on-surface hover:bg-surface-container transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
+              >
+                <Icon
+                  name="description"
+                  size={15}
+                  className={workspace.isFetchingReadmes || workspace.isBatchGeneratingAiDocuments ? 'animate-spin' : ''}
+                />
+                {workspace.isFetchingReadmes
+                  ? '抓取中'
+                  : workspace.isBatchGeneratingAiDocuments
+                    ? '分析中'
+                    : settingsHook.settings.ai.enableAutoSummary
+                      ? '抓取并分析'
+                      : '抓取 README'}
+              </button>
+              <button
+                onClick={() =>
+                  void runAiWorkspaceAction(() => workspace.handleBatchGenerateAiDocuments(settingsHook.settings.ai, {
+                    limit: batchAiLimitValue,
                     onlyMissing: true,
-                  })
-                  .catch(() => undefined)
-              }
-              disabled={
-                workspace.isFetchingReadmes ||
-                workspace.isBatchGeneratingAiDocuments ||
-                !workspace.authState.user ||
-                Boolean(autoSummaryConfigMessage)
-              }
-              title={settingsHook.settings.ai.enableAutoSummary ? autoSummaryConfigMessage ?? '抓取 README 后生成 AI 摘要' : '抓取 README'}
-              className="flex-1 px-3 py-1.5 rounded-lg bg-surface border border-outline-variant/40 text-xs text-on-surface hover:bg-surface-container transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
-            >
-              <Icon
-                name="description"
-                size={15}
-                className={workspace.isFetchingReadmes || workspace.isBatchGeneratingAiDocuments ? 'animate-spin' : ''}
-              />
-              {workspace.isFetchingReadmes
-                ? '抓取中'
-                : workspace.isBatchGeneratingAiDocuments
-                  ? '分析中'
-                  : settingsHook.settings.ai.enableAutoSummary
-                    ? '抓取并分析'
-                    : '抓取 README'}
-            </button>
-            <button
-              onClick={() =>
-                void workspace
-                  .handleBatchGenerateAiDocuments(settingsHook.settings.ai, { limit: 50, onlyMissing: true })
-                  .catch(() => undefined)
-              }
-              disabled={workspace.isBatchGeneratingAiDocuments || !workspace.authState.user || Boolean(aiConfigMessage)}
-              className="flex-1 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs hover:brightness-110 transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
-              title={aiConfigMessage ?? '批量生成 AI 摘要'}
-            >
-              <Icon name={workspace.isBatchGeneratingAiDocuments ? 'progress_activity' : 'auto_awesome'} size={15} className={workspace.isBatchGeneratingAiDocuments ? 'animate-spin' : ''} />
-              {workspace.isBatchGeneratingAiDocuments ? '分析中' : '批量 AI'}
-            </button>
-          </div>
+                    repositoryIds: batchTargetRepositoryIds,
+                  }))
+                }
+                disabled={workspace.isBatchGeneratingAiDocuments || !hasConnectedUser || !hasBatchTargets || Boolean(aiConfigMessage)}
+                className="flex-1 px-3 py-1.5 rounded-lg bg-primary text-white text-xs hover:brightness-110 transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
+                title={batchAiActionTitle}
+              >
+                <Icon name={workspace.isBatchGeneratingAiDocuments ? 'progress_activity' : 'auto_awesome'} size={15} className={workspace.isBatchGeneratingAiDocuments ? 'animate-spin' : ''} />
+                {workspace.isBatchGeneratingAiDocuments ? '分析中' : '批量 AI'}
+              </button>
+            </div>
+            <div className="mb-3 flex flex-col gap-2 rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-2">
+                <Icon name="speed" size={15} className="shrink-0 text-primary" />
+                <div className="min-w-0">
+                  <p className="font-medium text-on-surface">AI 批量上限</p>
+                  <p className="truncate">{batchAiLimitLabel}</p>
+                </div>
+              </div>
+              <select
+                value={batchAiLimit}
+                onChange={(event) => setBatchAiLimit(event.target.value as BatchAiLimit)}
+                disabled={workspace.isBatchGeneratingAiDocuments || workspace.isFetchingReadmes}
+                className="h-8 rounded-lg border border-outline-variant/40 bg-surface px-2 text-xs text-on-surface outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-60"
+                title="选择本次批量 AI 解析的仓库上限"
+              >
+                <option value="all">全部 Stars</option>
+                <option value="50">最多 50 个</option>
+                <option value="100">最多 100 个</option>
+                <option value="300">最多 300 个</option>
+              </select>
+            </div>
           <div className="mb-3 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => void handleFindSimilarOnGithub()}
-              disabled={isFindingSimilar || selectedRecommendationIds.length === 0 || Boolean(aiConfigMessage)}
-              title={aiConfigMessage ?? '根据勾选仓库在 GitHub 寻找相似或更优项目'}
+              disabled={
+                workspace.isFindingSimilarRepositories ||
+                !hasConnectedUser ||
+                selectedRecommendationIds.length === 0 ||
+                Boolean(aiConfigMessage)
+              }
+              title={recommendationActionTitle}
               className="flex min-w-[180px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-primary transition-colors hover:bg-primary/15 disabled:opacity-60"
             >
-              <Icon name={isFindingSimilar ? 'progress_activity' : 'travel_explore'} size={15} className={isFindingSimilar ? 'animate-spin' : ''} />
-              {isFindingSimilar ? '发现中' : `GitHub 相似发现${selectedRecommendationIds.length ? ` (${selectedRecommendationIds.length})` : ''}`}
+              <Icon
+                name={workspace.isFindingSimilarRepositories ? 'progress_activity' : 'travel_explore'}
+                size={15}
+                className={workspace.isFindingSimilarRepositories ? 'animate-spin' : ''}
+              />
+              {workspace.isFindingSimilarRepositories ? '发现中' : `GitHub 相似发现${selectedRecommendationIds.length ? ` (${selectedRecommendationIds.length})` : ''}`}
             </button>
             {selectedRecommendationIds.length > 0 && (
               <button
@@ -339,19 +499,43 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
           {workspace.batchAiSummary && (
             <BatchAiSummaryPanel summary={workspace.batchAiSummary} />
           )}
-          {(recommendationError || recommendationResponse) && (
-            <GithubRecommendationPanel
-              errorMessage={recommendationError}
-              response={recommendationResponse}
-            />
-          )}
-          {autoSummaryConfigMessage && (
-            <div className="mb-3 rounded-lg bg-error/10 border border-error/20 px-3 py-2 text-[11px] text-error">
-              {autoSummaryConfigMessage}
+          {batchAiActionNotice && (
+            <div
+              className={`mb-3 rounded-lg border px-3 py-2 text-[11px] leading-relaxed ${
+                batchAiActionNoticeTone === 'error'
+                  ? 'border-error/20 bg-error/10 text-error'
+                  : 'border-outline-variant/30 bg-surface-container-low text-on-surface-variant'
+              }`}
+            >
+              <span className="mr-1 font-medium">批量 AI：</span>
+              {batchAiActionNotice}
             </div>
           )}
+          {(workspace.githubRecommendationError || workspace.githubRecommendationResponse) && (
+            <GithubRecommendationPanel
+              errorMessage={workspace.githubRecommendationError}
+              response={workspace.githubRecommendationResponse}
+              pendingActions={recommendationCandidatePending}
+              candidateErrors={recommendationCandidateErrors}
+              onUpdateCandidate={handleUpdateRecommendationCandidate}
+              onStarCandidate={handleStarRecommendationCandidate}
+            />
+          )}
+          {recommendationActionNotice && (
+            <div
+              className={`mb-3 rounded-lg border px-3 py-2 text-[11px] leading-relaxed ${
+                recommendationActionNoticeTone === 'error'
+                  ? 'border-error/20 bg-error/10 text-error'
+                  : 'border-outline-variant/30 bg-surface-container text-on-surface-variant'
+              }`}
+            >
+              <span className="mr-1 font-medium">相似发现：</span>
+              {recommendationActionNotice}
+            </div>
+          )}
+          </details>
           <div className="flex flex-col gap-2">
-            {/* Sort + Search */}
+            {/* 排序与搜索 */}
             <div className="flex gap-2">
               <div className="flex-1 relative">
                 <Icon name="filter_list" size={18} className="absolute left-2.5 top-2 text-on-surface-variant" />
@@ -368,7 +552,7 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
               </div>
             </div>
 
-            {/* Search */}
+            {/* 搜索 */}
             <div className="relative">
               <Icon name="search" size={18} className="absolute left-2.5 top-2 text-on-surface-variant" />
               <input
@@ -380,7 +564,7 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
               />
             </div>
 
-            {/* Language filter */}
+            {/* 语言筛选 */}
             <div className="flex gap-2 text-xs">
               <select
                 value={selectedLanguage}
@@ -409,11 +593,11 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
             </div>
           </div>
 
-          {/* Quick Tags */}
+          {/* 快捷标签 */}
           <div className="flex gap-2 mt-3 overflow-x-auto custom-scrollbar pb-1">
             <button
               onClick={() => setSelectedTagId('')}
-              className="px-2.5 py-1 rounded-full bg-primary-container text-on-primary-container text-[11px] font-label-sm font-medium whitespace-nowrap cursor-pointer hover:brightness-110 transition-all"
+              className="px-2.5 py-1 rounded-full bg-primary-container text-white text-[11px] font-label-sm font-medium whitespace-nowrap cursor-pointer hover:brightness-110 transition-all"
             >
               全部 ({workspace.repositoryStats.total})
             </button>
@@ -422,7 +606,7 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                 key={tag.id}
                 onClick={() => setSelectedTagId(selectedTagId === tag.id ? '' : tag.id)}
                 className={`px-2.5 py-1 rounded-full glass-panel text-[11px] font-label-sm font-medium whitespace-nowrap cursor-pointer hover:bg-surface-variant/50 transition-all border border-outline-variant/30 ${
-                  selectedTagId === tag.id ? 'bg-primary text-on-primary' : 'text-on-surface'
+                  selectedTagId === tag.id ? 'bg-primary text-white' : 'text-on-surface'
                 }`}
               >
                 {tag.name}
@@ -431,13 +615,13 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
           </div>
         </div>
 
-        {/* Scrollable List */}
+        {/* 可滚动列表 */}
         <div
           ref={listViewportRef}
           className="flex-1 overflow-y-auto custom-scrollbar p-2"
           onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}
         >
-          {workspace.isLoadingRepositories ? (
+          {workspace.isLoadingRepositories && filteredRepos.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <Icon name="progress_activity" size={32} className="text-primary animate-spin" />
             </div>
@@ -463,32 +647,40 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                   style={{ transform: `translateY(${visibleWindow.offsetY}px)` }}
                 >
                   {viewMode === 'table' ? (
-                    visibleWindow.items.map((repo) => (
-	                      <RepositoryTableRow
-	                        key={repo.id}
-	                        repo={repo}
-	                        isSelected={selectedRepo?.id === repo.id}
-	                        isMarkedForRecommendation={recommendationSelection.has(repo.id)}
-	                        onClick={() => workspace.setSelectedRepositoryId(repo.id)}
-	                        onToggleRecommendation={() => toggleRecommendationSelection(repo.id)}
-	                      />
-                    ))
+                    visibleWindow.items.map((repo) => {
+                      const isMarkedForRecommendation = recommendationSelection.has(repo.id);
+                      return (
+                        <RepositoryTableRow
+                          key={repo.id}
+                          repo={repo}
+                          isSelected={selectedRepo?.id === repo.id}
+                          isMarkedForRecommendation={isMarkedForRecommendation}
+                          isRecommendationSelectionDisabled={!isMarkedForRecommendation && hasReachedRecommendationSelectionLimit}
+                          onClick={() => workspace.setSelectedRepositoryId(repo.id)}
+                          onToggleRecommendation={() => toggleRecommendationSelection(repo.id)}
+                        />
+                      );
+                    })
                   ) : (
-                    visibleWindow.items.map((repo) => (
-                      <div
-                        key={repo.id}
-                        className="box-border"
-                        style={{ height: REPOSITORY_ROW_HEIGHT, paddingBottom: REPOSITORY_CARD_GAP }}
-                      >
-	                        <RepoListItem
-	                          repo={repo}
-	                          isSelected={selectedRepo?.id === repo.id}
-	                          isMarkedForRecommendation={recommendationSelection.has(repo.id)}
-	                          onClick={() => workspace.setSelectedRepositoryId(repo.id)}
-	                          onToggleRecommendation={() => toggleRecommendationSelection(repo.id)}
-	                        />
-                      </div>
-                    ))
+                    visibleWindow.items.map((repo) => {
+                      const isMarkedForRecommendation = recommendationSelection.has(repo.id);
+                      return (
+                        <div
+                          key={repo.id}
+                          className="box-border"
+                          style={{ height: REPOSITORY_ROW_HEIGHT, paddingBottom: REPOSITORY_CARD_GAP }}
+                        >
+                          <RepoListItem
+                            repo={repo}
+                            isSelected={selectedRepo?.id === repo.id}
+                            isMarkedForRecommendation={isMarkedForRecommendation}
+                            isRecommendationSelectionDisabled={!isMarkedForRecommendation && hasReachedRecommendationSelectionLimit}
+                            onClick={() => workspace.setSelectedRepositoryId(repo.id)}
+                            onToggleRecommendation={() => toggleRecommendationSelection(repo.id)}
+                          />
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -497,8 +689,8 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
         </div>
       </div>
 
-      {/* Right Pane: Detail View */}
-      {viewMode === 'detail' && selectedRepo ? (
+      {/* 详情面板 */}
+      {selectedRepo ? (
         <RepoDetailPanel
           repo={selectedRepo}
           detail={workspace.repositoryDetail}
@@ -530,7 +722,7 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
               : null
           }
           isGeneratingAiDocument={workspace.isGeneratingAiDocument}
-          onGenerateAiDocument={() => workspace.handleGenerateAiDocument(settingsHook.settings.ai).catch(() => undefined)}
+          onGenerateAiDocument={() => runAiWorkspaceAction(() => workspace.handleGenerateAiDocument(settingsHook.settings.ai))}
           aiConfigMessage={aiConfigMessage}
           aiError={
             workspace.repositoryAiError?.repositoryId === selectedRepo.id
@@ -555,10 +747,19 @@ function RepoListItem(props: {
   repo: RepositoryListItem;
   isSelected: boolean;
   isMarkedForRecommendation: boolean;
+  isRecommendationSelectionDisabled: boolean;
   onClick: () => void;
   onToggleRecommendation: () => void;
 }) {
-  const { repo, isSelected, isMarkedForRecommendation, onClick, onToggleRecommendation } = props;
+  const {
+    repo,
+    isSelected,
+    isMarkedForRecommendation,
+    isRecommendationSelectionDisabled,
+    onClick,
+    onToggleRecommendation,
+  } = props;
+  const localizedProjectName = buildLocalizedProjectName(repo, repo.aiKeywords, repo.suggestedTags);
 
   return (
     <div
@@ -576,14 +777,26 @@ function RepoListItem(props: {
             type="button"
             onClick={(event) => {
               event.stopPropagation();
+              if (isRecommendationSelectionDisabled) {
+                return;
+              }
               onToggleRecommendation();
             }}
+            disabled={isRecommendationSelectionDisabled}
             className={`flex size-5 shrink-0 items-center justify-center rounded border transition-colors ${
               isMarkedForRecommendation
-                ? 'border-primary bg-primary text-on-primary'
+                ? 'border-primary bg-primary text-white'
+                : isRecommendationSelectionDisabled
+                  ? 'cursor-not-allowed border-outline-variant/25 bg-surface-container-low text-transparent opacity-45'
                 : 'border-outline-variant/40 bg-surface-container-low text-transparent hover:text-on-surface-variant'
             }`}
-            title={isMarkedForRecommendation ? '取消作为相似发现参考' : '作为相似发现参考'}
+            title={
+              isMarkedForRecommendation
+                ? '取消作为相似发现参考'
+                : isRecommendationSelectionDisabled
+                  ? `最多选择 ${MAX_RECOMMENDATION_SELECTION} 个参考仓库`
+                  : '作为相似发现参考'
+            }
           >
             <Icon name="check" size={14} />
           </button>
@@ -599,11 +812,16 @@ function RepoListItem(props: {
       <p className={`text-xs text-on-surface-variant line-clamp-1 mb-1 ${isSelected ? 'pl-2' : ''} leading-relaxed`}>
         {repo.description ?? '暂无描述'}
       </p>
-      {isSelected && (
-        <p className="text-[11px] text-primary/80 line-clamp-1 mb-2 pl-2 bg-primary/5 rounded px-1 py-0.5 inline-block">
-          {repo.aiSummary ? `AI: ${repo.aiSummary}` : repo.hasReadme ? 'README 已缓存，可生成 AI 摘要' : '等待抓取 README'}
-        </p>
-      )}
+      <p
+        className={`mb-1 line-clamp-1 rounded px-1 py-0.5 text-[11px] ${
+          isSelected
+            ? 'bg-primary/5 pl-2 text-primary/80'
+            : 'bg-surface-container-low text-on-surface-variant'
+        }`}
+        title={`中文定位：${localizedProjectName}`}
+      >
+        中文定位：{localizedProjectName}
+      </p>
       <div className={`flex items-center justify-between ${isSelected ? 'pl-2' : ''}`}>
         <div className="flex items-center gap-3">
           {repo.language && (
@@ -668,7 +886,7 @@ function RepositoryEmptyState(props: {
         type="button"
         onClick={props.onSync}
         disabled={props.isSyncing}
-        className="rounded-lg bg-primary px-3 py-2 text-xs font-medium text-on-primary transition-all hover:brightness-110 disabled:opacity-60"
+        className="rounded-lg bg-primary px-3 py-2 text-xs font-medium text-white transition-all hover:brightness-110 disabled:opacity-60"
       >
         {props.isSyncing ? '同步中...' : '同步 Stars'}
       </button>
@@ -678,12 +896,12 @@ function RepositoryEmptyState(props: {
 
 function RepositoryTableHeader() {
   return (
-    <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_80px] items-center gap-3 border-b border-outline-variant/30 bg-surface-container-low/95 px-3 py-2 text-[11px] font-semibold uppercase text-on-surface-variant backdrop-blur md:grid-cols-[minmax(200px,1.8fr)_minmax(220px,2fr)_110px_90px_110px] xl:grid-cols-[minmax(220px,1.8fr)_minmax(240px,2fr)_120px_100px_120px_120px] xl:gap-4 xl:px-4">
+    <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_80px] items-center gap-3 border-b border-outline-variant/30 bg-surface-container-low/95 px-3 py-2 text-[11px] font-semibold uppercase text-on-surface-variant backdrop-blur lg:grid-cols-[minmax(200px,1.8fr)_minmax(220px,2fr)_110px_90px_110px] xl:grid-cols-[minmax(220px,1.8fr)_minmax(240px,2fr)_120px_100px_120px_120px] xl:gap-4 xl:px-4">
       <span>仓库</span>
       <span>描述</span>
-      <span className="hidden md:block">语言</span>
+      <span className="hidden lg:block">语言</span>
       <span>Stars</span>
-      <span className="hidden md:block">状态</span>
+      <span className="hidden lg:block">状态</span>
       <span className="hidden xl:block">最近收藏</span>
     </div>
   );
@@ -693,16 +911,25 @@ function RepositoryTableRow(props: {
   repo: RepositoryListItem;
   isSelected: boolean;
   isMarkedForRecommendation: boolean;
+  isRecommendationSelectionDisabled: boolean;
   onClick: () => void;
   onToggleRecommendation: () => void;
 }) {
-  const { repo, isSelected, isMarkedForRecommendation, onClick, onToggleRecommendation } = props;
+  const {
+    repo,
+    isSelected,
+    isMarkedForRecommendation,
+    isRecommendationSelectionDisabled,
+    onClick,
+    onToggleRecommendation,
+  } = props;
+  const localizedProjectName = buildLocalizedProjectName(repo, repo.aiKeywords, repo.suggestedTags);
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_80px] items-center gap-3 border-b border-outline-variant/15 px-3 text-left transition-colors hover:bg-surface-variant/30 md:grid-cols-[minmax(200px,1.8fr)_minmax(220px,2fr)_110px_90px_110px] xl:grid-cols-[minmax(220px,1.8fr)_minmax(240px,2fr)_120px_100px_120px_120px] xl:gap-4 xl:px-4 ${
+      className={`grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_80px] items-center gap-3 border-b border-outline-variant/15 px-3 text-left transition-colors hover:bg-surface-variant/30 lg:grid-cols-[minmax(200px,1.8fr)_minmax(220px,2fr)_110px_90px_110px] xl:grid-cols-[minmax(220px,1.8fr)_minmax(240px,2fr)_120px_100px_120px_120px] xl:gap-4 xl:px-4 ${
         isSelected ? 'bg-primary/10 text-on-surface' : 'bg-surface/40 text-on-surface'
       }`}
       style={{ height: REPOSITORY_TABLE_ROW_HEIGHT }}
@@ -714,36 +941,48 @@ function RepositoryTableRow(props: {
           tabIndex={0}
           onClick={(event) => {
             event.stopPropagation();
+            if (isRecommendationSelectionDisabled) {
+              return;
+            }
             onToggleRecommendation();
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
               event.stopPropagation();
+              if (isRecommendationSelectionDisabled) {
+                return;
+              }
               onToggleRecommendation();
             }
           }}
           className={`flex size-5 shrink-0 items-center justify-center rounded border transition-colors ${
             isMarkedForRecommendation
-              ? 'border-primary bg-primary text-on-primary'
+              ? 'border-primary bg-primary text-white'
+              : isRecommendationSelectionDisabled
+                ? 'cursor-not-allowed border-outline-variant/25 bg-surface-container-low text-transparent opacity-45'
               : 'border-outline-variant/40 bg-surface-container-low text-transparent hover:text-on-surface-variant'
           }`}
-          title={isMarkedForRecommendation ? '取消作为相似发现参考' : '作为相似发现参考'}
+          title={
+            isMarkedForRecommendation
+              ? '取消作为相似发现参考'
+              : isRecommendationSelectionDisabled
+                ? `最多选择 ${MAX_RECOMMENDATION_SELECTION} 个参考仓库`
+                : '作为相似发现参考'
+          }
         >
           <Icon name="check" size={14} />
         </span>
         <Icon name="book" size={16} className={isSelected ? 'text-primary' : 'text-on-surface-variant'} />
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium">{repo.fullName}</span>
-          {repo.topics.length > 0 && (
-            <span className="mt-0.5 block truncate text-[11px] text-on-surface-variant">
-              {repo.topics.slice(0, 4).join(' · ')}
-            </span>
-          )}
+          <span className="mt-0.5 block truncate text-[11px] text-on-surface-variant" title={`中文定位：${localizedProjectName}`}>
+            中文定位：{localizedProjectName}
+          </span>
         </span>
       </span>
       <span className="truncate text-sm text-on-surface-variant">{repo.description ?? '暂无描述'}</span>
-      <span className="hidden items-center gap-1.5 text-sm md:flex">
+      <span className="hidden items-center gap-1.5 text-sm lg:flex">
         <span className="size-2 rounded-full" style={{ backgroundColor: getLanguageColor(repo.language) }} />
         <span className="truncate">{repo.language ?? '其他'}</span>
       </span>
@@ -751,7 +990,7 @@ function RepositoryTableRow(props: {
         <Icon name="star" size={14} />
         {compactNumber(repo.starsCount)}
       </span>
-      <span className="hidden flex-wrap gap-1 md:flex">
+      <span className="hidden flex-wrap gap-1 lg:flex">
         <span className={`rounded-full px-2 py-0.5 text-[11px] ${repo.hasReadme ? 'bg-success/10 text-success' : 'bg-outline-variant/20 text-on-surface-variant'}`}>
           {repo.hasReadme ? 'README' : '待抓取'}
         </span>
@@ -785,14 +1024,81 @@ function BatchAiSummaryPanel({ summary }: { summary: NonNullable<ReturnType<type
       </div>
       {shownFailures.length > 0 && (
         <div className="mt-2 space-y-1 border-t border-current/10 pt-2">
+          <p className="font-medium">失败仓库已跳过，已生成的摘要和本地数据不会回滚。</p>
           {shownFailures.map((failure) => (
             <p key={`${failure.repositoryId}-${failure.fullName}`} className="line-clamp-2">
               {failure.fullName}：{failure.error}
             </p>
           ))}
           {hiddenFailureCount > 0 && <p>还有 {hiddenFailureCount} 个失败项，请稍后分批重试或检查 AI 配置。</p>}
+          <p>如果是上下文超限或接口超时，可以换用更大上下文模型、降低批量数量，或稍后重试。</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function AiErrorPlaceholder({
+  message,
+  onRetry,
+  canRetry,
+  isRetrying,
+  retryTitle,
+}: {
+  message: string;
+  onRetry: () => void;
+  canRetry: boolean;
+  isRetrying: boolean;
+  retryTitle: string;
+}) {
+  return (
+    <div className="mb-4 rounded-lg border border-error/20 bg-error/10 px-3 py-3 text-[12px] leading-relaxed text-error">
+      <div className="flex items-start gap-2">
+        <Icon name="error" size={16} className="mt-0.5 shrink-0" />
+        <div className="min-w-0 space-y-1">
+          <p className="font-medium">AI 摘要暂未生成，本地 README 和仓库数据已保留。</p>
+          <p>{message}</p>
+          <p className="text-error/80">可以检查 AI 配置、换用更大上下文模型，或稍后重新生成。</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={!canRetry}
+            title={retryTitle}
+            className="mt-2 inline-flex items-center justify-center gap-1.5 rounded-lg border border-error/25 bg-surface px-3 py-1.5 text-[11px] font-medium text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Icon name={isRetrying ? 'progress_activity' : 'refresh'} size={14} className={isRetrying ? 'animate-spin' : ''} />
+            {isRetrying ? '重新生成中' : '重新生成 AI 解析'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KnowledgeStatusItem(props: { icon: string; label: string; value: string; active: boolean }) {
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${
+      props.active
+        ? 'border-primary/20 bg-primary/5'
+        : 'border-outline-variant/25 bg-surface-container-low'
+    }`}
+    >
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-on-surface-variant">
+        <Icon name={props.icon} size={13} />
+        {props.label}
+      </div>
+      <p className={`truncate text-[12px] font-semibold ${props.active ? 'text-primary' : 'text-on-surface-variant'}`}>
+        {props.value}
+      </p>
+    </div>
+  );
+}
+
+function AiMetaItem(props: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-outline-variant/20 bg-surface-container-low px-2.5 py-2">
+      <p className="mb-1 text-[10px] text-on-surface-variant">{props.label}</p>
+      <p className="font-medium text-on-surface [overflow-wrap:anywhere]" title={props.value}>{props.value}</p>
     </div>
   );
 }
@@ -800,8 +1106,12 @@ function BatchAiSummaryPanel({ summary }: { summary: NonNullable<ReturnType<type
 function GithubRecommendationPanel(props: {
   response: GithubRecommendationResponse | null;
   errorMessage: string | null;
+  pendingActions: Record<string, RecommendationCandidateAction>;
+  candidateErrors: Record<string, string>;
+  onUpdateCandidate: (fullName: string, status: Exclude<RecommendationCandidateStatus, 'starred'>) => Promise<void>;
+  onStarCandidate: (fullName: string) => Promise<void>;
 }) {
-  if (props.errorMessage) {
+  if (props.errorMessage && !props.response) {
     return (
       <div className="mb-3 rounded-lg border border-error/20 bg-error/10 px-3 py-2 text-[11px] leading-relaxed text-error">
         {props.errorMessage}
@@ -822,23 +1132,60 @@ function GithubRecommendationPanel(props: {
           <p className="mt-0.5 text-[11px] leading-relaxed text-on-surface-variant">
             {props.response.rationaleZh}
           </p>
+          {props.response.results.length > 0 && (
+            <p className="mt-1 text-[10px] text-on-surface-variant">
+              本次返回 {props.response.results.length} 个候选项目，全部可标记、忽略或加入 Stars。
+            </p>
+          )}
         </div>
       </div>
+      {props.errorMessage && (
+        <div className="mb-2 rounded-md border border-error/20 bg-error/10 px-2 py-1.5 text-[11px] leading-relaxed text-error">
+          {props.errorMessage}
+        </div>
+      )}
+      {props.response.searchFailures.length > 0 && (
+        <div className="mb-2 rounded-md border border-warning/25 bg-warning/10 px-2 py-1.5 text-[11px] leading-relaxed text-warning">
+          已保留成功找到的候选项目，{props.response.searchFailures.length} 个 GitHub 搜索式暂未完成，可稍后重试补全。
+        </div>
+      )}
       {props.response.results.length === 0 ? (
         <p className="rounded-md bg-surface-container-low px-2 py-1.5 text-[11px] text-on-surface-variant">
           暂未找到未收藏过的相似项目，可以换几个参考仓库再试。
         </p>
       ) : (
         <div className="space-y-2">
-          {props.response.results.slice(0, 6).map((repository) => (
-            <a
+          {props.response.results.map((repository) => {
+            const candidateStatus = repository.candidateStatus ?? 'new';
+            const isStarred = candidateStatus === 'starred';
+            const pendingAction = props.pendingActions[repository.fullName] ?? null;
+            const candidateError = props.candidateErrors[repository.fullName] ?? null;
+            const isPending = Boolean(pendingAction);
+            const statusLabel = candidateStatus === 'marked'
+              ? '已标记'
+              : candidateStatus === 'ignored'
+                ? '已忽略'
+                : isStarred
+                  ? '已加入 Stars'
+                  : '候选';
+            return (
+            <div
               key={repository.fullName}
-              href={repository.htmlUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="block rounded-md border border-outline-variant/20 bg-surface-container-low px-3 py-2 transition-colors hover:border-primary/30 hover:bg-surface-container"
+              className="rounded-md border border-outline-variant/20 bg-surface-container-low px-3 py-2 transition-colors hover:border-primary/30 hover:bg-surface-container"
             >
-              <span className="block truncate text-xs font-semibold text-primary">{repository.fullName}</span>
+              <div className="flex items-start justify-between gap-2">
+                <a
+                  href={repository.htmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 truncate text-xs font-semibold text-primary hover:underline"
+                >
+                  {repository.fullName}
+                </a>
+                <span className="shrink-0 rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] text-on-surface-variant">
+                  {statusLabel}
+                </span>
+              </div>
               <span className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-on-surface-variant">
                 {repository.description ?? '暂无描述'}
               </span>
@@ -851,8 +1198,47 @@ function GithubRecommendationPanel(props: {
                   </span>
                 ))}
               </span>
-            </a>
-          ))}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void props.onStarCandidate(repository.fullName)}
+                  disabled={isStarred || isPending}
+                  className="inline-flex items-center gap-1 rounded-md border border-primary/25 px-2 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:border-outline-variant/25 disabled:text-on-surface-variant disabled:hover:bg-transparent"
+                >
+                  <Icon
+                    name={pendingAction === 'star' ? 'progress_activity' : isStarred ? 'done' : 'star'}
+                    size={12}
+                    className={pendingAction === 'star' ? 'animate-spin' : ''}
+                  />
+                  {pendingAction === 'star' ? '加入中' : isStarred ? '已加入 Stars' : '加入 Stars'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isStarred || isPending}
+                  onClick={() => void props.onUpdateCandidate(repository.fullName, candidateStatus === 'marked' ? 'new' : 'marked')}
+                  className="inline-flex items-center gap-1 rounded-md border border-primary/25 px-2 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:border-outline-variant/25 disabled:text-on-surface-variant disabled:hover:bg-transparent"
+                >
+                  {pendingAction === 'mark' && <Icon name="progress_activity" size={12} className="animate-spin" />}
+                  {pendingAction === 'mark' ? '处理中' : candidateStatus === 'marked' ? '取消标记' : '标记'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isStarred || isPending}
+                  onClick={() => void props.onUpdateCandidate(repository.fullName, candidateStatus === 'ignored' ? 'new' : 'ignored')}
+                  className="inline-flex items-center gap-1 rounded-md border border-outline-variant/30 px-2 py-1 text-[10px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+                >
+                  {pendingAction === 'ignore' && <Icon name="progress_activity" size={12} className="animate-spin" />}
+                  {pendingAction === 'ignore' ? '处理中' : candidateStatus === 'ignored' ? '恢复候选' : '忽略'}
+                </button>
+              </div>
+              {candidateError && (
+                <p className="mt-2 rounded-md border border-error/20 bg-error/10 px-2 py-1 text-[10px] leading-relaxed text-error">
+                  {candidateError}
+                </p>
+              )}
+            </div>
+          );
+          })}
         </div>
       )}
       {props.response.queries.length > 0 && (
@@ -863,6 +1249,19 @@ function GithubRecommendationPanel(props: {
               <code key={query} className="block rounded bg-surface-container-low px-2 py-1">
                 {query}
               </code>
+            ))}
+          </div>
+        </details>
+      )}
+      {props.response.searchFailures.length > 0 && (
+        <details className="mt-2 text-[11px] text-warning">
+          <summary className="cursor-pointer">查看未完成的搜索式</summary>
+          <div className="mt-1 space-y-1">
+            {props.response.searchFailures.map((failure) => (
+              <div key={failure.query} className="rounded bg-warning/10 px-2 py-1">
+                <code className="block text-warning">{failure.query}</code>
+                <p className="mt-1 text-[10px] leading-relaxed text-warning/90">{failure.error}</p>
+              </div>
             ))}
           </div>
         </details>
@@ -938,6 +1337,29 @@ function RepoDetailPanel(props: {
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
   const [editingTagName, setEditingTagName] = useState('');
   const [deleteTagId, setDeleteTagId] = useState<string | null>(null);
+  const canGenerateAiDocument = !isGeneratingAiDocument && !isFetchingReadme && !isLoadingDetail && !aiConfigMessage;
+  const aiActionTitle = aiConfigMessage
+    ?? (isFetchingReadme
+      ? 'README 正在抓取中'
+      : !detail?.readme
+        ? '将自动抓取 README 后生成 AI 解析'
+        : aiDoc
+          ? '更新 AI 解析'
+          : 'AI 解析');
+  const readmeStatusLabel = detail?.readme ? 'README 已缓存' : repo.hasReadme ? '列表显示已缓存，正在载入详情' : 'README 待抓取';
+  const aiStatusLabel = aiDoc ? 'AI 已解析' : repo.aiSummary ? '列表已有摘要，正在载入详情' : 'AI 待解析';
+  const knowledgeTitle = buildKnowledgeTitle(repo, aiDoc?.keywords ?? repo.aiKeywords);
+  const localizedProjectName = buildLocalizedProjectName(
+    repo,
+    aiDoc?.keywords ?? repo.aiKeywords,
+    aiDoc?.suggestedTags ?? repo.suggestedTags,
+  );
+  const visibleKnowledgeTags = uniqueStrings([
+    ...(aiDoc?.suggestedTags ?? repo.suggestedTags),
+    ...(aiDoc?.keywords ?? repo.aiKeywords),
+    ...repo.topics,
+  ]).slice(0, 10);
+  const canApplySuggestedTags = Boolean(aiDoc?.suggestedTags.length);
 
   async function submitRenameTag(tag: TagItem) {
     await onRenameTag(tag, editingTagName);
@@ -952,25 +1374,32 @@ function RepoDetailPanel(props: {
     }
   }
 
+  async function applyAllSuggestedTags() {
+    if (!aiDoc) {
+      return;
+    }
+
+    for (const tag of aiDoc.suggestedTags) {
+      await onApplySuggestedTag(tag);
+    }
+  }
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-card-border glass-panel shadow-sm">
-      {/* Detail Header */}
-      <div className="flex shrink-0 flex-col gap-4 border-b border-card-border bg-surface/40 p-4 backdrop-blur-md sm:p-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex-1 min-w-0">
-          <div className="mb-2 flex min-w-0 flex-wrap items-center gap-3">
-            <div className="w-8 h-8 rounded-md bg-surface-container-lowest p-1 border border-outline-variant/30 flex items-center justify-center shrink-0">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-card-border glass-panel shadow-sm">
+      {/* 详情标题区 */}
+      <div className="flex shrink-0 flex-col gap-3 border-b border-card-border bg-surface/45 p-3 backdrop-blur-md sm:p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex min-w-0 items-center gap-2">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-outline-variant/30 bg-surface-container-lowest p-1">
               <Icon name="book" size={18} className="text-on-surface-variant" />
             </div>
-            <h2 className="font-headline-lg text-headline-lg font-bold text-on-surface tracking-tight truncate">
+            <h2 className="min-w-0 flex-1 truncate font-headline-lg text-headline-lg font-bold tracking-tight text-on-surface">
               {repo.fullName}
             </h2>
-            <span className="px-2 py-0.5 rounded-full bg-outline-variant/20 text-on-surface text-[10px] font-label-sm border border-outline-variant/30 shrink-0">
-              公开
-            </span>
           </div>
-          <p className="text-on-surface-variant text-sm max-w-2xl">{repo.description ?? '暂无描述'}</p>
-          {/* Stats */}
-          <div className="mt-4 flex flex-wrap items-center gap-3 sm:gap-4">
+          <p className="line-clamp-2 max-w-4xl text-sm leading-relaxed text-on-surface-variant">{repo.description ?? '暂无描述'}</p>
+          {/* 统计信息 */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-on-surface-variant sm:gap-3">
             <div className="flex items-center gap-1.5 text-sm text-on-surface-variant">
               <Icon name="star" size={18} />
               <span className="font-medium">{compactNumber(repo.starsCount)}</span>
@@ -983,41 +1412,43 @@ function RepoDetailPanel(props: {
               <span className="size-2.5 rounded-full" style={{ backgroundColor: getLanguageColor(repo.language) }} />
               <span className="font-medium">{repo.language ?? '其他'}</span>
             </div>
-            <div className="h-4 w-px bg-outline-variant/40 mx-2" />
-            <a
-              href={repo.htmlUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex min-w-0 items-center gap-1 text-sm text-primary hover:underline"
-            >
-              <Icon name="link" size={16} />
-              <span className="truncate">{repo.htmlUrl.replace('https://', '')}</span>
-            </a>
+            <span className="min-w-0 truncate rounded-md border border-primary/15 bg-primary/5 px-2 py-0.5 text-xs text-on-surface-variant">
+              {localizedProjectName}
+            </span>
           </div>
         </div>
-        {/* Action Buttons */}
-        <div className="flex shrink-0 gap-2">
-          <a
-            href={repo.htmlUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary shadow-md transition-all hover:scale-[1.02] hover:brightness-110 active:scale-[0.98]"
-          >
-            <Icon name="open_in_new" size={18} /> 在浏览器打开
-          </a>
-        </div>
+        <a
+          href={repo.htmlUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface transition-colors hover:border-primary/40 hover:text-primary"
+        >
+          <Icon name="open_in_new" size={18} /> 在浏览器打开
+        </a>
       </div>
 
-      {/* Scrollable Detail Content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar bg-surface-container-lowest/30 p-4 lg:p-5 xl:p-6">
-        <div className="flex min-w-0 flex-col gap-5 2xl:flex-row 2xl:gap-6">
-        {/* Main Content (README + Notes) */}
+      {/* 可滚动详情内容 */}
+      <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar bg-surface-container-lowest/30 p-3 sm:p-4 lg:p-5 xl:p-6">
+        <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(400px,480px)] 2xl:gap-6">
+        {/* 主要内容（README 与笔记） */}
         <div className="min-w-0 flex-1 space-y-5">
-          {/* README */}
-          <div className="rounded-xl border border-card-border bg-surface/60 p-4 shadow-sm backdrop-blur-sm sm:p-5 xl:p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Icon name="description" size={20} className="text-primary" />
-              <h3 className="font-headline-md text-lg font-semibold text-on-surface">README</h3>
+          {/* README 内容 */}
+          <div className="rounded-xl border border-card-border bg-surface/60 p-4 shadow-sm backdrop-blur-sm sm:p-5">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Icon name="description" size={20} className="text-primary" />
+                  <h3 className="font-headline-md text-lg font-semibold text-on-surface">README</h3>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">
+                  原文用于核对项目安装、API、示例和限制；右侧 AI 解析会基于当前缓存生成。
+                </p>
+              </div>
+              {detail?.readme && (
+                <span className="shrink-0 rounded-lg border border-outline-variant/25 bg-surface-container-low px-2.5 py-1 text-[11px] text-on-surface-variant">
+                  {detail.readme.sourcePath} · {formatDateTime(detail.readme.fetchedAt)}
+                </span>
+              )}
             </div>
             {readmeError && (
               <div className="mb-4 rounded-lg border border-error/20 bg-error/10 px-3 py-2 text-xs leading-relaxed text-error">
@@ -1037,12 +1468,12 @@ function RepoDetailPanel(props: {
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-on-surface-variant gap-2">
                 <Icon name="book" size={48} className="opacity-30" />
-                <p className="font-body-md text-sm">该仓库暂无 README 缓存，请先抓取 README</p>
+                <p className="font-body-md text-sm">该仓库暂无 README 缓存，可以先抓取 README，也可以直接点击 AI 解析自动补抓。</p>
                 <button
                   type="button"
                   onClick={() => void onFetchReadme()}
                   disabled={isFetchingReadme}
-                  className="mt-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-on-primary transition-all hover:brightness-110 disabled:opacity-60"
+                  className="mt-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-white transition-all hover:brightness-110 disabled:opacity-60"
                 >
                   {isFetchingReadme ? '抓取中...' : '抓取当前 README'}
                 </button>
@@ -1050,7 +1481,7 @@ function RepoDetailPanel(props: {
             )}
           </div>
 
-          {/* Notes */}
+          {/* 笔记 */}
           <div className="rounded-xl border border-card-border bg-surface/60 p-4 shadow-sm backdrop-blur-sm sm:p-5 xl:p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -1060,7 +1491,7 @@ function RepoDetailPanel(props: {
               <button
                 onClick={() => void onSaveAnnotation()}
                 disabled={isSavingAnnotation}
-                className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-sm font-medium hover:brightness-110 transition-all flex items-center gap-2 shadow-sm disabled:opacity-60"
+                className="px-3 py-1.5 rounded-lg bg-primary text-white text-sm font-medium hover:brightness-110 transition-all flex items-center gap-2 shadow-sm disabled:opacity-60"
               >
                 <Icon name="save" size={16} /> 保存笔记和状态
               </button>
@@ -1259,63 +1690,123 @@ function RepoDetailPanel(props: {
           </div>
         </div>
 
-        {/* Right Sidebar: AI Insights */}
-        <div className="min-w-0 space-y-5 2xl:w-[clamp(280px,26vw,360px)] 2xl:shrink-0">
-          <div className="rounded-xl bg-gradient-to-br from-primary-container/10 to-transparent border border-primary/20 p-5 shadow-sm relative overflow-hidden group flex-1 flex flex-col">
-            <div className="absolute -right-4 -top-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl group-hover:bg-primary/20 transition-all duration-700" />
-            <div className="flex items-center gap-2 mb-4">
-              <Icon name="auto_awesome" size={20} className="text-primary" />
-              <h3 className="font-headline-md text-base font-semibold text-primary">AI 洞察</h3>
+        {/* 右侧 AI 洞察栏 */}
+        <div className="min-w-0 space-y-5">
+          <div className="flex flex-col rounded-xl border border-primary/20 bg-surface/80 p-4 shadow-sm backdrop-blur-sm sm:p-5 xl:sticky xl:top-0">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Icon name="auto_awesome" size={20} className="text-primary" />
+                  <h3 className="font-headline-md text-base font-semibold text-primary">AI 项目知识卡</h3>
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed text-on-surface-variant">{knowledgeTitle}</p>
+                <p className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-2.5 py-1.5 text-[12px] leading-relaxed text-on-surface">
+                  <span className="mr-1 font-semibold text-primary">中文名称/定位</span>
+                  {localizedProjectName}
+                </p>
+              </div>
+              <div className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
+                GSAT
+              </div>
             </div>
-            <button
-              onClick={() => void onGenerateAiDocument()}
-              disabled={isGeneratingAiDocument || isLoadingDetail || Boolean(aiConfigMessage)}
-              className="mb-4 w-full px-3 py-2 rounded-lg bg-primary text-on-primary text-xs font-medium hover:brightness-110 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
-              title={aiConfigMessage ?? (aiDoc ? '更新 AI 摘要' : '生成 AI 摘要')}
-            >
-              <Icon name={isGeneratingAiDocument ? 'progress_activity' : 'auto_awesome'} size={16} className={isGeneratingAiDocument ? 'animate-spin' : ''} />
-              {isGeneratingAiDocument ? '生成中...' : aiDoc ? '更新 AI 摘要' : '生成 AI 摘要'}
-            </button>
+            <div className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <button
+                onClick={() => void onGenerateAiDocument()}
+                disabled={!canGenerateAiDocument}
+                className="flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-white shadow-sm transition-all hover:brightness-110 disabled:opacity-60"
+                title={aiActionTitle}
+              >
+                <Icon name={isGeneratingAiDocument ? 'progress_activity' : 'auto_awesome'} size={16} className={isGeneratingAiDocument ? 'animate-spin' : ''} />
+                {isGeneratingAiDocument ? '解析中...' : aiDoc ? '更新 AI 解析' : 'AI 解析'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void onFetchReadme()}
+                disabled={isFetchingReadme || isLoadingDetail}
+                className="flex items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-low px-3 py-2 text-xs font-medium text-on-surface transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-60"
+                title={detail?.readme ? '更新 README 缓存' : '抓取当前 README'}
+              >
+                <Icon name={isFetchingReadme ? 'progress_activity' : 'description'} size={16} className={isFetchingReadme ? 'animate-spin' : ''} />
+                {isFetchingReadme ? '抓取中' : detail?.readme ? '更新 README' : '抓取 README'}
+              </button>
+            </div>
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              <KnowledgeStatusItem icon="description" label="README" value={readmeStatusLabel} active={Boolean(detail?.readme)} />
+              <KnowledgeStatusItem icon="psychology" label="AI 解析" value={aiStatusLabel} active={Boolean(aiDoc)} />
+              <KnowledgeStatusItem icon="star" label="Stars" value={compactNumber(repo.starsCount)} active />
+              <KnowledgeStatusItem icon="fork_right" label="Forks" value={compactNumber(repo.forksCount)} active />
+            </div>
+            {visibleKnowledgeTags.length > 0 && (
+              <div className="mb-4 rounded-lg border border-outline-variant/20 bg-surface-container-low/60 px-3 py-2">
+                <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-on-surface">
+                  <Icon name="hub" size={13} />
+                  项目画像
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {visibleKnowledgeTags.map((tag) => (
+                    <span key={tag} className="rounded-md bg-surface-container-high px-2 py-0.5 text-[10px] text-on-surface-variant">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {aiConfigMessage && (
               <div className="mb-4 rounded-lg border border-error/20 bg-error/10 px-3 py-2 text-[12px] leading-relaxed text-error">
                 {aiConfigMessage}
               </div>
             )}
-            {aiError && (
-              <div className="mb-4 rounded-lg border border-error/20 bg-error/10 px-3 py-2 text-[12px] leading-relaxed text-error">
-                {aiError}
+            {!detail?.readme && !isLoadingDetail && !readmeError && (
+              <div className="mb-4 rounded-lg border border-warning/20 bg-warning/10 px-3 py-2 text-[12px] leading-relaxed text-on-surface-variant">
+                可以先抓取 README，也可以直接点击 AI 解析；系统会自动补抓 README 并生成中文解析、关键词和建议标签。
               </div>
             )}
-            <div className="space-y-4 flex-1 overflow-y-auto custom-scrollbar pr-1">
-              {/* AI Summary */}
+            {aiError && (
+              <AiErrorPlaceholder
+                message={aiError}
+                onRetry={() => void onGenerateAiDocument()}
+                canRetry={canGenerateAiDocument}
+                isRetrying={isGeneratingAiDocument}
+                retryTitle={aiActionTitle}
+              />
+            )}
+            <div className="space-y-3">
+              {/* AI 摘要 */}
               {aiDoc ? (
-                <div>
-                  <h4 className="text-xs font-semibold text-on-surface uppercase tracking-wider mb-2 font-label-sm flex items-center gap-1">
+                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-3">
+                  <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-on-surface font-label-sm">
                     <Icon name="summarize" size={14} /> 中文摘要
                   </h4>
                   <p className="text-[12px] text-on-surface-variant leading-relaxed">{aiDoc.summaryZh}</p>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-4 text-on-surface-variant gap-2">
+                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-outline-variant/30 bg-surface-container-low/40 px-3 py-6 text-on-surface-variant">
                   <Icon name="psychology" size={32} className="opacity-30" />
-                  <p className="text-[11px]">暂无 AI 摘要</p>
+                  <p className="text-[12px]">暂无 AI 解析</p>
+                  <p className="max-w-[260px] text-center text-[11px] leading-relaxed">点击 AI 解析后，会生成中文摘要、README 梳理、关键词和建议标签。</p>
                 </div>
               )}
 
-              {/* README Breakdown */}
-              {aiDoc?.readmeZh && (
-                <div>
-                  <h4 className="text-xs font-semibold text-on-surface uppercase tracking-wider mb-2 font-label-sm flex items-center gap-1">
+              {/* README 结构拆解 */}
+              {aiDoc ? (
+                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-3">
+                  <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-on-surface font-label-sm">
                     <Icon name="article" size={14} /> README 梳理
                   </h4>
-                  <p className="text-[12px] text-on-surface-variant leading-relaxed whitespace-pre-wrap">{aiDoc.readmeZh}</p>
+                  {aiDoc.readmeZh ? (
+                    <p className="text-[12px] text-on-surface-variant leading-relaxed whitespace-pre-wrap">{aiDoc.readmeZh}</p>
+                  ) : (
+                    <p className="rounded-lg bg-surface-container-low px-3 py-2 text-[12px] text-on-surface-variant">
+                      当前 AI 解析没有单独输出 README 梳理，可以点击更新 AI 解析重新生成。
+                    </p>
+                  )}
                 </div>
-              )}
+              ) : null}
 
-              {/* Keywords */}
+              {/* 关键词 */}
               {aiDoc && aiDoc.keywords.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-semibold text-on-surface uppercase tracking-wider mb-2 font-label-sm flex items-center gap-1">
+                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-3">
+                  <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-on-surface font-label-sm">
                     <Icon name="key" size={14} /> 关键词
                   </h4>
                   <div className="flex flex-wrap gap-1">
@@ -1331,12 +1822,22 @@ function RepoDetailPanel(props: {
                 </div>
               )}
 
-              {/* Suggested Tags */}
+              {/* 建议标签 */}
               {aiDoc && aiDoc.suggestedTags.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-semibold text-on-surface uppercase tracking-wider mb-2 font-label-sm flex items-center gap-1">
-                    <Icon name="recommend" size={14} /> 建议标签
-                  </h4>
+                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <h4 className="flex items-center gap-1 text-xs font-semibold text-on-surface font-label-sm">
+                      <Icon name="recommend" size={14} /> 建议标签
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => void applyAllSuggestedTags().catch(() => undefined)}
+                      disabled={isSavingTag || !canApplySuggestedTags}
+                      className="rounded-md px-2 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-60"
+                    >
+                      全部应用
+                    </button>
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {aiDoc.suggestedTags.map((tag) => (
                       <button
@@ -1354,7 +1855,23 @@ function RepoDetailPanel(props: {
                 </div>
               )}
 
-              {/* Topics from repo */}
+              {aiDoc && (
+                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-3">
+                  <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-on-surface font-label-sm">
+                    <Icon name="analytics" size={14} /> 生成参数
+                  </h4>
+                  <div className="grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-2">
+                    <AiMetaItem label="模型" value={aiDoc.model} />
+                    <AiMetaItem label="生成时间" value={formatDateTime(aiDoc.generatedAt)} />
+                    <AiMetaItem label="输入" value={`${compactNumber(aiDoc.inputTokens)} tokens`} />
+                    <AiMetaItem label="输出" value={`${compactNumber(aiDoc.outputTokens)} tokens`} />
+                    <AiMetaItem label="Prompt" value={aiDoc.promptVersion} />
+                    <AiMetaItem label="来源哈希" value={shortHash(aiDoc.sourceHash)} />
+                  </div>
+                </div>
+              )}
+
+              {/* 仓库 Topics */}
               {repo.topics.length > 0 && (
                 <div>
                   <h4 className="text-xs font-semibold text-on-surface uppercase tracking-wider mb-2 font-label-sm flex items-center gap-1">
@@ -1381,87 +1898,6 @@ function RepoDetailPanel(props: {
   );
 }
 
-function ReadmeRenderer(props: { markdown: string; repositoryFullName: string; sourcePath: string }) {
-  const sourceDirectory = props.sourcePath.includes('/')
-    ? props.sourcePath.split('/').slice(0, -1).join('/')
-    : '';
-  const components: Components = {
-    a({ href, children, node: _node, ...anchorProps }) {
-      const resolvedHref = resolveReadmeAssetUrl(
-        href,
-        props.repositoryFullName,
-        sourceDirectory,
-        'blob',
-      );
-      return (
-        <a href={resolvedHref} target="_blank" rel="noreferrer" {...anchorProps}>
-          {children}
-        </a>
-      );
-    },
-    img({ src, alt, node: _node, ...imageProps }) {
-      const resolvedSrc = resolveReadmeAssetUrl(
-        src,
-        props.repositoryFullName,
-        sourceDirectory,
-        'raw',
-      );
-      return <img src={resolvedSrc} alt={alt ?? ''} loading="lazy" {...imageProps} />;
-    },
-  };
-
-  return (
-    <div className="readme-rendered max-h-[min(72vh,860px)] overflow-auto rounded-lg border border-outline-variant/20 bg-surface-container-lowest/70 p-4 text-on-surface custom-scrollbar">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, rehypeSanitize]}
-        components={components}
-      >
-        {props.markdown}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-function resolveReadmeAssetUrl(
-  url: string | undefined,
-  repositoryFullName: string,
-  sourceDirectory: string,
-  mode: 'blob' | 'raw',
-) {
-  if (!url || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(url)) {
-    return url;
-  }
-
-  const normalizedPath = normalizeReadmePath(url, sourceDirectory);
-  if (mode === 'raw') {
-    return `https://raw.githubusercontent.com/${repositoryFullName}/HEAD/${normalizedPath}`;
-  }
-
-  return `https://github.com/${repositoryFullName}/blob/HEAD/${normalizedPath}`;
-}
-
-function normalizeReadmePath(path: string, sourceDirectory: string) {
-  const cleanPath = safeDecodeUri(path).replace(/^.\//, '');
-  if (cleanPath.startsWith('/')) {
-    return cleanPath.slice(1);
-  }
-
-  if (!sourceDirectory) {
-    return cleanPath;
-  }
-
-  return `${sourceDirectory}/${cleanPath}`;
-}
-
-function safeDecodeUri(path: string) {
-  try {
-    return decodeURI(path);
-  } catch {
-    return path;
-  }
-}
-
 function formatRelativeTime(iso: string): string {
   const date = new Date(iso);
   const now = new Date();
@@ -1472,4 +1908,80 @@ function formatRelativeTime(iso: string): string {
   const diffD = Math.floor(diffH / 24);
   if (diffD === 1) return '1天前活跃';
   return `${diffD}天前活跃`;
+}
+
+function buildKnowledgeTitle(repo: RepositoryListItem, keywords: string[]) {
+  const keywordText = keywords.slice(0, 3).join('、');
+  const baseName = repo.name.replace(/[-_]/g, ' ');
+  if (keywordText) {
+    return `${baseName}：${keywordText} 相关项目`;
+  }
+  if (repo.language) {
+    return `${baseName}：${repo.language} 项目`;
+  }
+  return `${baseName}：GitHub 项目知识卡`;
+}
+
+function buildLocalizedProjectName(repo: RepositoryListItem, keywords: string[], suggestedTags: string[]) {
+  const baseName = repo.name.replace(/[-_]/g, ' ').trim() || repo.name;
+  const descriptors = [...suggestedTags, ...keywords, repo.language ?? '']
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item, index, list) => list.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === index)
+    .slice(0, 3);
+
+  if (descriptors.length > 0) {
+    return `${baseName}：${descriptors.join('、')} 项目`;
+  }
+
+  if (repo.description) {
+    return `${baseName}：${truncateText(repo.description, 24)}`;
+  }
+
+  return `${baseName}：GitHub 开源项目`;
+}
+
+function uniqueStrings(values: string[]) {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const trimmedValue = value.trim();
+    if (!trimmedValue) {
+      continue;
+    }
+    const key = trimmedValue.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(trimmedValue);
+  }
+  return result;
+}
+
+function truncateText(value: string, maxLength: number) {
+  const normalizedValue = value.trim();
+  if (normalizedValue.length <= maxLength) {
+    return normalizedValue;
+  }
+
+  return `${normalizedValue.slice(0, maxLength)}...`;
+}
+
+function formatDateTime(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function shortHash(hash: string) {
+  return hash.length > 12 ? hash.slice(0, 12) : hash;
 }
