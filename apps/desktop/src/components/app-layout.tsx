@@ -14,6 +14,11 @@ type AppLayoutProps = {
   syncSummary: StarSyncSummary | null;
   onGlobalSearch: (query: string) => void;
   taskProgress: TaskProgressEvent | null;
+  onRetryTask: (() => void) | null;
+  retryTaskLabel: string | null;
+  isRetryingTask: boolean;
+  statusMessage: string | null;
+  errorMessage: string | null;
 };
 
 const NAV_ITEMS: { key: Page; icon: string; label: string }[] = [
@@ -22,7 +27,6 @@ const NAV_ITEMS: { key: Page; icon: string; label: string }[] = [
   { key: 'tag-network', icon: 'hub', label: '标签网络' },
   { key: 'ai-search', icon: 'psychology', label: 'AI 搜索' },
 ];
-
 export function AppLayout(props: AppLayoutProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -49,25 +53,27 @@ export function AppLayout(props: AppLayoutProps) {
   }
 
   return (
-    <div className="app-layout flex h-dvh min-w-0 overflow-hidden">
-      {/* SideNavBar */}
-      <aside className="glass-sidebar fixed left-0 top-0 z-40 hidden h-full w-[clamp(220px,20vw,260px)] flex-col gap-stack-gap p-4 lg:flex">
-        {/* Header */}
+    <div className="app-layout flex h-full min-w-0 overflow-hidden">
+      {/* 侧边导航栏 */}
+      <aside className="glass-sidebar fixed bottom-0 left-0 top-titlebar z-40 hidden w-[clamp(250px,21vw,300px)] flex-col gap-stack-gap p-4 lg:flex">
+        {/* 标题区 */}
         <div className="flex items-center gap-3 px-2 py-4 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-primary-container text-on-primary-container flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
-            <Icon name="star" size={22} fill />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate font-headline-md text-[14px] font-bold leading-tight text-on-surface" title="GitHub-Stars-AI-Tools">
-              GitHub-Stars-AI-Tools
+          <img
+            src="/icon.png"
+            alt="GitHub-Stars-AI-Tools"
+            className="h-11 w-11 shrink-0 rounded-[14px] border border-card-border bg-surface-container-lowest object-contain shadow-sm"
+          />
+          <div className="min-w-0 leading-tight">
+            <h1 className="truncate text-[17px] font-semibold leading-5 text-on-surface" title="GitHub-Stars-AI-Tools">
+              GitHub Stars AI
             </h1>
-            <p className="font-label-sm text-label-sm text-on-surface-variant opacity-80">
-              GSAT
+            <p className="truncate font-label-sm text-[11px] text-on-surface-variant opacity-85">
+              GSAT 本地知识库
             </p>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* 导航标签 */}
         <nav className="flex-1 flex flex-col gap-1">
           {NAV_ITEMS.map((item) => (
             <button
@@ -90,20 +96,27 @@ export function AppLayout(props: AppLayoutProps) {
           ))}
         </nav>
 
-        {props.taskProgress && <TaskProgressCard progress={props.taskProgress} />}
+        {props.taskProgress && (
+          <TaskProgressCard
+            progress={props.taskProgress}
+            onRetry={props.onRetryTask}
+            retryLabel={props.retryTaskLabel}
+            isRetrying={props.isRetryingTask}
+          />
+        )}
 
-        {/* CTA - 同步数据 */}
+        {/* 同步数据入口 */}
         <button
           onClick={() => (props.user ? props.onSyncStars() : props.onNavigate('settings'))}
           disabled={props.isSyncing}
           title={props.user ? '同步 GitHub Stars' : '请先连接 GitHub 账号'}
-          className="interactive-btn w-full py-2.5 bg-primary text-on-primary rounded-lg font-body-md text-body-md font-semibold flex items-center justify-center gap-2 mb-2 shadow-md shadow-primary/20 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="interactive-btn mb-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2563eb] py-2.5 font-body-md text-body-md font-semibold text-white shadow-[0_10px_22px_-14px_rgba(37,99,235,0.95)] hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Icon name={props.isSyncing ? 'progress_activity' : 'sync'} size={18} className={props.isSyncing ? 'animate-spin' : ''} />
+          <Icon name={props.isSyncing ? 'progress_activity' : 'sync'} size={18} className={`text-white ${props.isSyncing ? 'animate-spin' : ''}`} />
           {props.isSyncing ? '同步中...' : props.user ? '同步数据' : '连接 GitHub'}
         </button>
 
-        {/* Footer Actions */}
+        {/* 底部操作区 */}
         <div className="flex flex-col gap-1 pt-4 border-t border-card-border">
           <button
             onClick={() => props.onNavigate('settings')}
@@ -130,17 +143,19 @@ export function AppLayout(props: AppLayoutProps) {
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex h-dvh min-w-0 flex-1 flex-col lg:ml-[clamp(220px,20vw,260px)]">
-        {/* TopNavBar */}
+      {/* 主内容区域 */}
+      <div className="flex h-full min-w-0 flex-1 flex-col lg:ml-[clamp(250px,21vw,300px)]">
+        {/* 顶部导航栏 */}
         <header className="glass-topbar sticky top-0 z-30 flex min-h-16 w-full flex-wrap items-center justify-between gap-3 px-3 py-2 sm:px-4 lg:flex-nowrap lg:px-gutter">
           <div className="flex min-w-0 items-center gap-2 lg:hidden">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-container text-on-primary-container shadow-sm">
-              <Icon name="star" size={20} fill />
-            </div>
+            <img
+              src="/icon.png"
+              alt="GitHub-Stars-AI-Tools"
+              className="h-9 w-9 shrink-0 rounded-[12px] border border-card-border bg-surface-container-lowest object-contain shadow-sm"
+            />
             <div className="min-w-0">
-              <h1 className="truncate font-headline-md text-[15px] font-bold leading-tight text-on-surface" title="GitHub-Stars-AI-Tools">
-                GitHub-Stars-AI-Tools
+              <h1 className="truncate text-[16px] font-semibold leading-5 text-on-surface" title="GitHub-Stars-AI-Tools">
+                GitHub Stars AI
               </h1>
               <p className="truncate font-label-sm text-[11px] text-on-surface-variant">
                 Stars 知识库
@@ -148,7 +163,7 @@ export function AppLayout(props: AppLayoutProps) {
             </div>
           </div>
 
-          {/* Search */}
+          {/* 搜索 */}
           <form className="group relative order-3 w-full min-w-0 sm:order-none sm:flex-1 lg:max-w-[420px]" onSubmit={handleSearchSubmit}>
             <Icon
               name="search"
@@ -173,8 +188,18 @@ export function AppLayout(props: AppLayoutProps) {
             </div>
           </form>
 
-          {/* Trailing Actions */}
+          {/* 右侧操作区 */}
           <div className="flex min-w-0 shrink-0 items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => (props.user ? props.onSyncStars() : props.onNavigate('settings'))}
+              disabled={props.isSyncing}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-60"
+              title={props.user ? '同步 GitHub Stars' : '请先连接 GitHub 账号'}
+              aria-label={props.user ? '同步 GitHub Stars' : '连接 GitHub 账号'}
+            >
+              <Icon name={props.isSyncing ? 'progress_activity' : 'sync'} size={20} className={props.isSyncing ? 'animate-spin' : ''} />
+            </button>
             <button
               type="button"
               onClick={() => props.onNavigate('ai-search')}
@@ -248,18 +273,69 @@ export function AppLayout(props: AppLayoutProps) {
           </nav>
         </header>
 
-        {/* Page Content */}
+        {(props.errorMessage || props.statusMessage) && (
+          <GlobalStatusBanner
+            type={props.errorMessage ? 'error' : 'success'}
+            message={props.errorMessage ?? props.statusMessage ?? ''}
+          />
+        )}
+
+        {props.taskProgress && (
+          <div className="shrink-0 border-b border-card-border bg-surface/90 px-3 py-2 backdrop-blur-md sm:px-4 lg:hidden">
+            <TaskProgressCard
+              progress={props.taskProgress}
+              onRetry={props.onRetryTask}
+              retryLabel={props.retryTaskLabel}
+              isRetrying={props.isRetryingTask}
+            />
+          </div>
+        )}
+
+        {/* 页面内容 */}
         <main className="flex-1 overflow-hidden">{props.children}</main>
       </div>
     </div>
   );
 }
 
-function TaskProgressCard(props: { progress: TaskProgressEvent }) {
+function GlobalStatusBanner(props: { type: 'success' | 'error'; message: string }) {
+  const isError = props.type === 'error';
+
+  return (
+    <div className="shrink-0 border-b border-card-border bg-surface/90 px-3 py-2 backdrop-blur-md sm:px-4 lg:px-gutter">
+      <div
+        className={`flex min-w-0 items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
+          isError
+            ? 'border-error/25 bg-error/10 text-error'
+            : 'border-success/25 bg-success/10 text-success'
+        }`}
+        role={isError ? 'alert' : 'status'}
+      >
+        <Icon name={isError ? 'error' : 'check_circle'} size={18} className="mt-0.5 shrink-0" />
+        <p className="min-w-0 flex-1 break-words font-body-md leading-relaxed">{props.message}</p>
+      </div>
+    </div>
+  );
+}
+
+function TaskProgressCard(props: {
+  progress: TaskProgressEvent;
+  onRetry: (() => void) | null;
+  retryLabel: string | null;
+  isRetrying: boolean;
+}) {
   const progress = props.progress;
-  const percentage = progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : 0;
+  const hasKnownProgress = progress.total > 0;
+  const safeCurrent = hasKnownProgress ? Math.min(progress.current, progress.total) : progress.current;
+  const percentage = hasKnownProgress ? Math.min(100, Math.round((safeCurrent / progress.total) * 100)) : 0;
+  const progressLabel = progress.taskId === 'generate-ai-tag-network'
+    ? `已完成 ${safeCurrent}/${progress.total} 批 · ${percentage}%`
+    : `${safeCurrent}/${progress.total} · ${percentage}%`;
   const isRunning = progress.status === 'running';
   const isFailed = progress.status === 'failed';
+  const isPartial = progress.status === 'partial';
+  const canRetry = (isFailed || isPartial) && Boolean(props.onRetry);
+  const stageLabel = getTaskStageLabel(progress.stage);
   const iconName = progress.taskType === 'ai'
     ? 'auto_awesome'
     : progress.taskType === 'readme'
@@ -273,28 +349,105 @@ function TaskProgressCard(props: { progress: TaskProgressEvent }) {
       <div className="flex items-start gap-2">
         <span
           className={`mt-0.5 flex size-7 items-center justify-center rounded-lg ${
-            isFailed ? 'bg-error/10 text-error' : isRunning ? 'bg-primary/10 text-primary' : 'bg-success/10 text-success'
+            isFailed
+              ? 'bg-error/10 text-error'
+              : isPartial
+                ? 'bg-warning/10 text-warning'
+                : isRunning
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-success/10 text-success'
           }`}
         >
-          <Icon name={isRunning ? 'progress_activity' : iconName} size={16} className={isRunning ? 'animate-spin' : ''} />
+          <Icon name={isRunning ? 'progress_activity' : isPartial ? 'warning' : iconName} size={16} className={isRunning ? 'animate-spin' : ''} />
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-semibold text-on-surface">
-            {isRunning ? '任务执行中' : isFailed ? '任务失败' : '任务完成'}
+            {isRunning ? '任务执行中' : isFailed ? '任务失败' : isPartial ? '任务部分完成' : '任务完成'}
           </p>
-          <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-on-surface-variant">{progress.message}</p>
+          <p className={`mt-0.5 text-[11px] leading-snug text-on-surface-variant ${isFailed || isPartial ? 'whitespace-pre-wrap break-words' : 'line-clamp-2'}`}>
+            {progress.message}
+          </p>
+          {(stageLabel || progress.repositoryName) && (
+            <div className="mt-2 flex min-w-0 flex-wrap gap-1.5 text-[10px] leading-none text-on-surface-variant/90">
+              {stageLabel && (
+                <span className="max-w-full rounded-full border border-outline-variant/35 bg-surface-container-low px-2 py-1">
+                  阶段：{stageLabel}
+                </span>
+              )}
+              {progress.repositoryName && (
+                <span className="max-w-full truncate rounded-full border border-outline-variant/35 bg-surface-container-low px-2 py-1" title={progress.repositoryName}>
+                  当前：{progress.repositoryName}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
-      {progress.total > 0 && (
+      {(hasKnownProgress || isRunning) && (
         <div className="mt-3">
           <div className="h-1.5 overflow-hidden rounded-full bg-surface-container-high">
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percentage}%` }} />
+            {hasKnownProgress ? (
+              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percentage}%` }} />
+            ) : (
+              <div className="task-progress-indeterminate h-full w-1/3 rounded-full bg-primary" />
+            )}
           </div>
           <p className="mt-1 text-right text-[10px] text-on-surface-variant">
-            {progress.current}/{progress.total}
+            {hasKnownProgress ? progressLabel : '正在处理...'}
           </p>
         </div>
       )}
+      {canRetry && (
+        <button
+          type="button"
+          onClick={props.onRetry ?? undefined}
+          disabled={props.isRetrying}
+          className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/25 bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Icon name={props.isRetrying ? 'progress_activity' : 'refresh'} size={14} className={props.isRetrying ? 'animate-spin' : ''} />
+          {props.isRetrying ? '重试中' : props.retryLabel ?? '重试任务'}
+        </button>
+      )}
     </div>
   );
+}
+
+function getTaskStageLabel(stage: string) {
+  switch (stage) {
+    case 'auth':
+      return '验证账号';
+    case 'prepare':
+      return '准备数据';
+    case 'batch':
+      return '批量处理';
+    case 'check':
+      return '检查仓库';
+    case 'plan':
+      return '生成计划';
+    case 'fetch':
+    case 'fetch-readme':
+    case 'github-search':
+      return '请求数据';
+    case 'github-star':
+      return '更新 Stars';
+    case 'parse':
+      return '解析数据';
+    case 'save':
+      return '写入本地';
+    case 'summarize':
+    case 'analyze':
+      return 'AI 分析';
+    case 'partial-failure':
+      return '部分失败';
+    case 'incremental-stop':
+      return '增量完成';
+    case 'done':
+      return '已完成';
+    case 'error':
+      return '失败';
+    case 'request':
+      return '准备中';
+    default:
+      return stage ? stage : '';
+  }
 }
