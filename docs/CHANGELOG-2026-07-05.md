@@ -16,9 +16,9 @@
   - 默认 Gist ID 配置
   
 - **AI 设置**
-  - AI Provider 选择（OpenAI/Anthropic/本地模型）
+  - AI 服务选择（OpenAI、OpenAI 兼容接口、Anthropic 或关闭 AI）
   - API Key 配置
-  - 模型选择
+  - 请求地址与模型 ID 配置
   - 自动生成摘要开关
   
 - **通用设置**
@@ -93,9 +93,8 @@ apps/desktop/src/
 #### 配置 AI 功能
 1. 打开设置面板
 2. 选择"AI"标签
-3. 选择 AI Provider
-4. 输入 API Key
-5. 选择模型名称
+3. 选择 AI 服务
+4. 填写请求地址、API Key 和模型 ID
 6. 开启自动生成摘要（可选）
 
 ### 🎯 下一步计划

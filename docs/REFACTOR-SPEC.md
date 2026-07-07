@@ -318,7 +318,7 @@
 ## 技术约束
 
 ### 必须使用
-1. **React 18** + **TypeScript**
+1. **React 19** + **TypeScript**
 2. **Tailwind CSS 4** + 自定义 CSS 变量
 3. **Tauri 2** 后端
 4. **现有的 Hooks**（`useStarsWorkspace`, `useSettings`）
