@@ -8,8 +8,12 @@ on:
         required: true
         type: string
       changelog:
-        description: "更新日志，会写入 GitHub Release"
-        required: true
+        description: "简短更新日志；多行 Markdown 请填 changelog_file"
+        required: false
+        type: string
+      changelog_file:
+        description: "仓库内 Markdown 文件路径，例如 docs/releases/v0.1.0.md"
+        required: false
         type: string
       release_draft:
         description: "是否创建草稿 Release"
@@ -69,7 +73,7 @@ jobs:
             rust_targets: x86_64-apple-darwin
           - platform: Windows
             os: windows-latest
-            args: ""
+            args: --bundles nsis
             rust_targets: ""
           - platform: Linux
             os: ubuntu-22.04
@@ -206,6 +210,38 @@ jobs:
       - name: Build shared packages
         run: pnpm build:packages
 
+      - name: Resolve release notes
+        id: release-notes
+        shell: bash
+        run: |
+          changelog_file="${{ github.event.inputs.changelog_file }}"
+          changelog="${{ github.event.inputs.changelog }}"
+
+          if [[ -n "$changelog_file" ]]; then
+            if [[ "$changelog_file" = /* || "$changelog_file" == *".."* ]]; then
+              echo "changelog_file 必须是仓库内相对路径，且不能包含 .." >&2
+              exit 1
+            fi
+            if [[ ! -f "$changelog_file" ]]; then
+              echo "更新日志文件不存在：$changelog_file" >&2
+              exit 1
+            fi
+            notes_file="$changelog_file"
+          else
+            if [[ -z "$changelog" ]]; then
+              echo "必须填写 changelog 或 changelog_file" >&2
+              exit 1
+            fi
+            notes_file="$RUNNER_TEMP/release-notes.md"
+            printf '%s\n' "$changelog" > "$notes_file"
+          fi
+
+          {
+            echo "body<<EOF"
+            cat "$notes_file"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Import Windows signing certificate
         id: windows-signing
         if: runner.os == 'Windows'
@@ -262,7 +298,7 @@ jobs:
           projectPath: apps/desktop
           tagName: ${{ needs.prepare.outputs.tag_name }}
           releaseName: ${{ needs.prepare.outputs.release_name }}
-          releaseBody: ${{ github.event.inputs.changelog }}
+          releaseBody: ${{ steps.release-notes.outputs.body }}
           releaseDraft: ${{ github.event.inputs.release_draft }}
           prerelease: ${{ github.event.inputs.prerelease }}
           uploadPlainBinary: false

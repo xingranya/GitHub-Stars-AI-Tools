@@ -51,12 +51,15 @@ for (const ignoredLocalConfig of ['.env', '.env.*']) {
 assert.match(workflow, /on:\s*\n\s*workflow_dispatch:/, 'Release workflow 必须支持网页端手动运行');
 assert.match(workflow, /version:/, 'Release workflow 必须要求填写版本号');
 assert.match(workflow, /changelog:/, 'Release workflow 必须要求填写更新日志');
+assert.match(workflow, /changelog_file:/, 'Release workflow 必须支持从 Markdown 文件读取多行 Release notes');
+assert.match(workflow, /steps\.release-notes\.outputs\.body/, 'Release workflow 必须把解析后的 Markdown Release notes 传给 Tauri Action');
 assert.match(workflow, /contents:\s*write/, 'Release workflow 必须具备写 Release 的 contents: write 权限');
 assert.match(workflow, /macos-latest/, 'Release workflow 必须覆盖 macOS');
 assert.match(workflow, /windows-latest/, 'Release workflow 必须覆盖 Windows');
 assert.match(workflow, /ubuntu-22\.04|ubuntu-latest/, 'Release workflow 必须覆盖 Linux');
 assert.match(workflow, /platform:\s*macOS Apple Silicon[\s\S]*?args:\s*--target aarch64-apple-darwin/, 'Release workflow 必须构建 macOS Apple Silicon 安装包');
 assert.match(workflow, /platform:\s*macOS Intel[\s\S]*?args:\s*--target x86_64-apple-darwin/, 'Release workflow 必须构建 macOS Intel 安装包');
+assert.match(workflow, /platform:\s*Windows[\s\S]*?args:\s*--bundles nsis/, 'Windows runner 必须只构建 NSIS 安装包，避免 MSI/WiX 打包链路拖慢或阻塞');
 assert.match(workflow, /Install Rust target[\s\S]*?if:\s*matrix\.rust_targets != ''[\s\S]*?rustup target add \$\{\{ matrix\.rust_targets \}\}/, 'Release workflow 必须只在矩阵声明 target 时安装 macOS 交叉编译 target');
 assert.match(workflow, /tauri-apps\/tauri-action@v1/, 'Release workflow 必须使用 Tauri 官方 GitHub Action 上传安装包');
 assert.match(workflow, /tagName:/, 'Release workflow 必须用版本号生成 Release tag');
