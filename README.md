@@ -1,46 +1,33 @@
-# GitHub-Stars-AI-Tools
+<div align="center">
+  <img src="apps/desktop/public/icon.png" alt="GitHub-Stars-AI-Tools 应用图标" width="128" />
+  <h1>GitHub-Stars-AI-Tools</h1>
+  <p><strong>把 GitHub Stars 变成可搜索、可总结、可继续探索的本地 AI 知识库。</strong></p>
+  <p>
+    <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-111827?style=for-the-badge" /></a>
+    <a href="https://tauri.app/"><img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white" /></a>
+    <a href="https://react.dev/"><img alt="React" src="https://img.shields.io/badge/React-19-087EA4?style=for-the-badge&logo=react&logoColor=white" /></a>
+    <a href="https://www.rust-lang.org/"><img alt="Rust" src="https://img.shields.io/badge/Rust-backend-B7410E?style=for-the-badge&logo=rust&logoColor=white" /></a>
+    <a href="https://www.sqlite.org/"><img alt="SQLite" src="https://img.shields.io/badge/SQLite-local-003B57?style=for-the-badge&logo=sqlite&logoColor=white" /></a>
+  </p>
+</div>
 
-> GSAT 是本地优先的 GitHub Stars 管理桌面应用，支持 README 缓存、AI 摘要、标签图谱、自然语言搜索与 GitHub 相似项目发现。
+## 核心能力
 
-[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
-[![Tauri](https://img.shields.io/badge/Tauri-2.0-blue.svg)](https://tauri.app/)
-[![React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
+|  |  |
+| --- | --- |
+| 🔄 **Stars 同步** | 全量/增量同步 GitHub Stars，写入本地 SQLite 数据库 |
+| 📚 **README 知识库** | 缓存 README、Topics、语言、标签、笔记和阅读状态 |
+| ✨ **AI 摘要** | 支持 OpenAI、OpenAI 兼容接口与 Anthropic，生成中文摘要和关键词 |
+| 🔍 **自然语言搜索** | 跨仓库名称、描述、README、AI 文档、标签和笔记检索 |
+| 🏷️ **AI 标签网络** | 自动生成标签建议，把大量 Stars 整理成可维护的分类体系 |
+| 🧭 **相似项目发现** | 根据已收藏项目生成 GitHub Search 策略，发现更好或更活跃的替代项目 |
 
-**项目仓库**: [xingranya/GitHub-Stars-AI-Tools](https://github.com/xingranya/GitHub-Stars-AI-Tools)
+## 为什么用它
 
-## 项目主要特点
-
-GitHub-Stars-AI-Tools 的核心定位不是“另一个 GitHub Stars 列表”，而是把长期收藏的开源项目沉淀成本地可检索、可解释、可继续追问的个人开源知识库。它适合 Stars 数量较多、经常需要回看项目用途、比较同类工具、整理技术栈和快速理解英文 README 的用户。
-
-| 特点 | 价值 | 对应能力 |
-| --- | --- | --- |
-| 本地优先的桌面客户端 | 普通用户安装一个客户端即可使用，不需要自行部署服务、配置 `.env` 或维护数据库 | Tauri 桌面应用、SQLite 本地数据库、应用内 GitHub Token 与 AI 设置 |
-| GitHub Stars 变成知识库 | 不只保存仓库名称，而是把 README、Topics、语言、标签、笔记和 AI 摘要统一沉淀 | Stars 同步、README 缓存、Markdown 渲染、仓库详情知识面板 |
-| AI 是增强层，不是门槛 | 用户可以只使用本地管理能力；需要 AI 时再接入 OpenAI、OpenAI 兼容接口或 Anthropic | 自定义请求地址、API Key、模型 ID；不强制 Embeddings 或向量模型 |
-| 面向中文理解的项目解析 | 解决英文 README、缩写项目名和复杂工具链难以快速理解的问题 | 中文摘要、中文定位、关键词、建议标签、README 梳理和右侧 AI 解析面板 |
-| 可持续对话的自然语言搜索 | 搜索不是一次性关键词匹配，可以结合最近查询上下文继续追问 | AI 搜索上下文、卡片式结果、总结与下一步操作入口 |
-| 自动整理标签图谱 | 减少手动给大量 Stars 分类的成本，让标签体系从已有收藏中自然生成 | AI 标签网络、标签建议、标签与仓库关联写入本地 |
-| 发现更好或相似项目 | 不只管理已经收藏的项目，还能根据选中的 Stars 继续探索 GitHub 上的替代方案 | AI 生成 GitHub Search 策略、相似项目推荐、候选项目状态管理 |
-| 长任务可见且可恢复 | 同步、README 抓取和 AI 分析耗时较长时，用户能看到进度和失败原因 | 后台 FIFO 任务队列、阶段/仓库名进度、失败卡片、重试动作 |
-| 上线友好的安全模型 | Token 和 AI Key 不写入前端存储，降低本机泄露风险 | macOS Keychain、Windows Credential Manager、Linux Secret Service |
-| 可验证的发布链路 | 开发者可以用统一脚本验收核心链路，发版时由 GitHub Actions 产出三端安装包 | `pnpm verify:mvp`、Tauri 发布配置校验、Release Desktop Apps 工作流 |
-
-一句话总结：GSAT 把 GitHub Stars 从“收藏夹”升级为“本地开源知识库”，重点解决同步、理解、检索、整理、推荐和跨设备注解备份这几条真实使用链路。
-
-## ✨ 特性
-
-- 🔄 **本地同步** - 将 GitHub Stars 同步到本地数据库
-- 🤖 **AI 摘要** - 接入 OpenAI、OpenAI 兼容接口或 Anthropic，自定义请求地址、API Key 与模型 ID
-- 🔍 **智能检索** - 支持名称、描述、Topics、README、AI 摘要、标签与笔记的本地知识召回
-- 🏷️ **标签管理** - 自定义标签组织你的 Star 列表
-- 🕸️ **AI 标签网络** - 根据 Stars 简略信息自动生成标签图谱并写入本地标签体系
-- 🧭 **相似项目发现** - 基于选中的 Stars 生成 GitHub Search 策略，寻找相似或更活跃的项目
-- 📝 **笔记注解** - 为每个仓库添加个人笔记
-- 📖 **阅读状态** - 标记已读/未读/稍后阅读
-- ⚡ **大列表优化** - 1000+ Stars 使用虚拟列表渲染，降低滚动卡顿
-- ☁️ **跨设备同步** - 通过 GitHub Gist 同步注解数据
-- 🔒 **隐私优先** - GitHub Token 和 AI API Key 使用系统凭据管理器保存，知识库数据存储在本地数据库
-- 🧩 **桌面体验** - 首次引导、任务进度、失败重试、深色模式、响应式布局与应用内真实链路自检
+- **本地优先**：GitHub Token、AI Key 和知识库数据都保存在本机，密钥进入系统凭据管理器。
+- **不强制 AI**：基础管理能力可离线使用，需要总结、标签和推荐时再接入 AI 服务。
+- **面向重度收藏者**：适合 Stars 很多、经常回看项目用途、比较同类工具和整理技术栈的用户。
+- **桌面级体验**：后台任务队列、失败重试、大列表虚拟滚动、深色模式和跨平台安装包都已覆盖。
 
 ## 🖥️ 系统要求
 
@@ -104,31 +91,6 @@ pnpm package:desktop
 # macOS：生成标准拖拽安装 DMG（大图标 App + Applications）
 pnpm package:desktop:dmg
 ```
-
-`pnpm package:desktop` 会先构建 Monorepo 共享包，再执行 Tauri 安装包打包。安装包位于 `apps/desktop/src-tauri/target/release/bundle/`。本机只能稳定产出当前系统对应安装包；Linux、Windows、macOS 三端安装包由 GitHub Actions 分平台构建：
-
-- macOS: Apple Silicon 与 Intel 两套 `.dmg`
-- Windows: `.msi` 或 `setup.exe`
-- Linux: `.deb`、`.rpm` 或 `.AppImage`
-
-macOS 本机需要官方示例那种双击后拖动安装的 DMG 时，使用 `pnpm package:desktop:dmg`。该命令会先让 Tauri 生成 DMG 辅助脚本，再构建 `.app`，最后通过 `apps/desktop/scripts/package-dmg.mjs` 重新封装 Finder 视图，图标大小为 128px，窗口中只保留 `GitHub-Stars-AI-Tools.app` 和 `Applications` 两个大对象。最终产物位于：
-
-```text
-apps/desktop/dist-dmg/GitHub-Stars-AI-Tools_0.1.0.dmg
-```
-
-如果只需要普通 Tauri 安装包，继续使用 `pnpm package:desktop`；如果要检查 macOS 安装体验或上传给用户，优先使用 `pnpm package:desktop:dmg`。
-
-### GitHub Actions 发版
-
-仓库内置 `Release Desktop Apps` 工作流。提交代码后，在 GitHub 网页端进入 **Actions → Release Desktop Apps → Run workflow**，填写：
-
-- `version`: 版本号，例如 `0.1.0` 或 `v0.1.0`
-- `changelog`: 本次更新日志，会写入 Release
-- `release_draft`: 是否先创建草稿 Release
-- `prerelease`: 是否标记为预发布
-
-工作流会先把填写的版本号同步到 Tauri、Cargo 和 package 配置，再在 macOS Apple Silicon、macOS Intel、Windows、Linux runner 上分别执行 Tauri `build`，并把各平台安装包上传到同一个 `v版本号` GitHub Release。macOS job 会在 Tauri 默认 DMG 之后额外执行 `apps/desktop/scripts/package-dmg.mjs`，用 128px Finder 图标重新封装，并通过 `gh release upload --clobber` 覆盖 Release 中同名 `.dmg`，因此最终下载到的是官方示例风格的拖拽安装 DMG。普通安装包用户不需要任何 `.env`、Node.js、pnpm 或 Rust；GitHub Token 与 AI Key 都在应用内设置。
 
 ## 📖 使用指南
 
@@ -260,18 +222,6 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 `pnpm verify:release` 会生成当前系统安装包，只在准备发版或检查安装包时运行，不作为日常提交前检查。
 
-### MVP 验收边界
-
-- `pnpm verify:mvp` 覆盖 AUTH、SYNC、VIEW、AI、SRCH、DATA 的静态验收、离线 Provider 映射、SQLite 持久化、前端构建、Rust 单元测试和 Tauri 发布配置校验；该命令不生成安装包，并会在结束后清理 `dist`、`target` 和 `tsconfig.tsbuildinfo` 构建产物。
-- `pnpm verify:acceptance` 会打印验收矩阵，列出每个 MVP 测试项的自动化证据。
-- `pnpm verify:release` 会先校验 Tauri 分发配置和 GitHub Actions 发版链路，再执行 Tauri `build` 生成当前系统安装包；只有准备发版或检查安装包时才需要运行。
-- `pnpm verify:ai-search-flow` 覆盖自然语言搜索上下文传递、按账号会话恢复和后端上下文评分。
-- `pnpm verify:recommendation-flow` 覆盖 AI 生成 GitHub Search 策略、过滤已收藏仓库和相似项目结果展示。
-- 设置页“客户端就绪状态”提供真实链路自检，会检查本地 SQLite 数据库、应用设置目录写入权限，读取系统凭据中的 GitHub Token，请求 Stars API、抓取 README、调用当前 AI 服务生成摘要、生成 AI 标签网络建议，并用 AI 生成的搜索式请求 GitHub Search。
-- 真实链路自检完成后会在本地设置中持久化发布包自检记录，只保存检查时间和通过、失败、跳过数量，不保存 Token、AI Key 或错误详情。
-- GitHub Token、AI 请求地址、API Key 和模型 ID 都在应用界面中填写，并保存到系统凭据管理器。
-- 真实链路复核只在应用内进行：用户安装后填写自己的 GitHub Token、AI 请求地址、API Key 和模型 ID，即可连接账号、同步 Stars、测试 AI、生成 README 摘要并执行相似推荐联动；不需要安装前配置环境变量或额外脚本。
-
 ## 🔐 隐私与安全
 
 - GitHub Token 存储在系统凭据管理器：macOS Keychain、Windows Credential Manager 或 Linux Secret Service
@@ -283,15 +233,15 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 ## 🗺️ 路线图
 
-- [x] Phase 1: 基础设施搭建
-- [x] Phase 2: GitHub 同步功能
-- [x] Phase 3: Star 管理核心能力
-- [x] Phase 4: AI 知识库集成
-- [x] Phase 5: 自然语言检索
-- [x] Phase 6: 增量同步与 Gist 同步
-- [x] Phase 7: AI 标签网络与 GitHub 相似项目发现
-- [x] Phase 8: 静态验收矩阵、任务监控与发布包验收项
-- [x] Phase 9: 成本统计与发布包自检记录
+- [X] Phase 1: 基础设施搭建
+- [X] Phase 2: GitHub 同步功能
+- [X] Phase 3: Star 管理核心能力
+- [X] Phase 4: AI 知识库集成
+- [X] Phase 5: 自然语言检索
+- [X] Phase 6: 增量同步与 Gist 同步
+- [X] Phase 7: AI 标签网络与 GitHub 相似项目发现
+- [X] Phase 8: 静态验收矩阵、任务监控与发布包验收项
+- [X] Phase 9: 成本统计与发布包自检记录
 - [ ] Phase 10: zvec 本地向量索引与混合语义检索（计划见 [zvec-vector-roadmap.md](docs/plan/zvec-vector-roadmap.md)）
 - [ ] 后续: 团队协作功能
 
