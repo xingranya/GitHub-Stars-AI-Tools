@@ -1,0 +1,108 @@
+name: 问题反馈 / 功能建议
+description: 反馈 Bug、提出功能建议、补充文档问题或提交其他改进想法。
+title: "[反馈]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量填写可复现的信息，这会帮助我们更快定位问题或评估建议。
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 反馈类型
+      description: 请选择最接近的一项。
+      options:
+        - Bug / 异常行为
+        - 功能建议
+        - 文档问题
+        - 安装或打包问题
+        - AI 服务配置问题
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 简要描述
+      description: 用一两句话说明你遇到的问题或希望增加的能力。
+      placeholder: 例如：同步 Stars 时 README 缓存失败，提示 SQLite 元命令不支持。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 如果是 Bug，请写出稳定复现路径；如果是功能建议，可以写当前工作流。
+      placeholder: |
+        1. 打开应用
+        2. 连接 GitHub
+        3. 点击同步 Stars
+        4. 观察到...
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+      description: 描述你认为正确或理想的表现。
+      placeholder: 例如：失败仓库应被跳过并显示明确原因，已缓存的数据不应回滚。
+    validations:
+      required: false
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 描述实际看到的现象、错误提示或异常状态。
+      placeholder: 请粘贴完整错误信息，或说明界面上具体显示了什么。
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 请填写和问题相关的环境信息。
+      value: |
+        - 操作系统：
+        - 应用版本：
+        - 安装方式：源码运行 / DMG / MSI / AppImage / 其他
+        - GitHub Token 权限范围：
+        - AI 服务提供商：OpenAI / OpenAI 兼容接口 / Anthropic / 未使用
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 截图或日志
+      description: 可以粘贴截图、控制台日志、终端输出或相关仓库名称。请先移除 Token、API Key 等敏感信息。
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: 影响程度
+      description: 这会帮助我们判断优先级。
+      options:
+        - 阻塞使用
+        - 影响主要功能
+        - 影响部分体验
+        - 轻微问题
+        - 建议优化
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他补充
+      description: 任何额外背景、替代方案、相关链接或你已经尝试过的修复方法。
+    validations:
+      required: false
