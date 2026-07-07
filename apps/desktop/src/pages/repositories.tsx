@@ -342,16 +342,16 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
 
   return (
     <div
-      className={`grid h-full min-w-0 flex-1 content-start grid-cols-1 gap-4 overflow-y-auto p-3 sm:p-4 lg:min-h-0 lg:content-stretch lg:overflow-hidden lg:p-5 xl:gap-5 xl:p-6 ${
+      className={`grid h-full min-w-0 flex-1 content-start grid-cols-1 gap-3 overflow-y-auto p-2.5 sm:p-3 md:min-h-0 md:content-stretch md:overflow-hidden md:p-3 xl:gap-4 xl:p-4 ${
         isRepositoryListCollapsed
-          ? 'lg:grid-cols-[64px_minmax(0,1fr)]'
-          : 'lg:grid-cols-[minmax(260px,30vw,340px)_minmax(0,1fr)] xl:grid-cols-[minmax(280px,25vw,360px)_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]'
+          ? 'md:grid-cols-[56px_minmax(0,1fr)]'
+          : 'md:grid-cols-[minmax(240px,27vw,300px)_minmax(0,1fr)] xl:grid-cols-[minmax(260px,23vw,320px)_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)]'
       }`}
     >
       {/* 左侧仓库列表 */}
       <div
-        className={`min-w-0 overflow-hidden rounded-xl border border-card-border bg-surface-container-low shadow-sm lg:h-full ${
-          isRepositoryListCollapsed ? 'hidden lg:flex lg:flex-col lg:items-center lg:justify-between lg:p-2' : 'flex h-[min(42dvh,460px)] min-h-[300px] flex-col lg:h-full'
+        className={`min-w-0 overflow-hidden rounded-xl border border-card-border bg-surface-container-low shadow-sm md:h-full ${
+          isRepositoryListCollapsed ? 'hidden md:flex md:flex-col md:items-center md:justify-between md:p-2' : 'flex h-[min(42dvh,460px)] min-h-[300px] flex-col md:h-full'
         }`}
       >
         {isRepositoryListCollapsed ? (
@@ -389,7 +389,7 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
             <button
               type="button"
               onClick={() => setIsRepositoryListCollapsed(true)}
-              className="hidden size-8 shrink-0 items-center justify-center rounded-lg border border-outline-variant/30 bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary lg:flex"
+              className="hidden size-8 shrink-0 items-center justify-center rounded-lg border border-outline-variant/30 bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary md:flex"
               title="收起 Star 列表"
               aria-label="收起 Star 列表"
             >
@@ -1426,30 +1426,30 @@ function RepoDetailPanel(props: {
   }
 
   return (
-    <div className="flex min-w-0 flex-col overflow-visible rounded-xl border border-card-border glass-panel shadow-sm lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+    <div className="flex min-w-0 flex-col overflow-visible rounded-xl border border-card-border glass-panel shadow-sm md:min-h-0 md:flex-1 md:overflow-hidden">
       {/* 详情标题区 */}
-      <div className="flex shrink-0 flex-col gap-2 border-b border-card-border bg-surface/45 px-3 py-2.5 backdrop-blur-md lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex shrink-0 flex-col gap-2 border-b border-card-border bg-surface/45 px-3 py-2 backdrop-blur-md md:flex-row md:items-center md:justify-between">
         <div className="min-w-0 flex-1">
           <div className="mb-1.5 flex min-w-0 items-center gap-2">
             <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-outline-variant/30 bg-surface-container-lowest p-1">
               <Icon name="book" size={16} className="text-on-surface-variant" />
             </div>
-            <h2 className="min-w-0 flex-1 truncate font-headline-lg text-2xl font-bold tracking-tight text-on-surface">
+            <h2 className="min-w-0 flex-1 truncate font-headline-lg text-xl font-bold tracking-tight text-on-surface xl:text-2xl">
               {repo.fullName}
             </h2>
           </div>
           <p className="line-clamp-1 max-w-4xl text-sm leading-relaxed text-on-surface-variant">{repo.description ?? '暂无描述'}</p>
           {/* 统计信息 */}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant sm:gap-3">
-            <div className="flex items-center gap-1.5 text-sm text-on-surface-variant">
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant sm:gap-3">
+            <div className="flex items-center gap-1 text-xs text-on-surface-variant">
               <Icon name="star" size={16} />
               <span className="font-medium">{compactNumber(repo.starsCount)}</span>
             </div>
-            <div className="flex items-center gap-1.5 text-sm text-on-surface-variant">
+            <div className="flex items-center gap-1 text-xs text-on-surface-variant">
               <Icon name="fork_right" size={16} />
               <span className="font-medium">{compactNumber(repo.forksCount)}</span>
             </div>
-            <div className="flex items-center gap-1.5 text-sm text-on-surface-variant">
+            <div className="flex items-center gap-1 text-xs text-on-surface-variant">
               <span className="size-2.5 rounded-full" style={{ backgroundColor: getLanguageColor(repo.language) }} />
               <span className="font-medium">{repo.language ?? '其他'}</span>
             </div>
@@ -1469,11 +1469,11 @@ function RepoDetailPanel(props: {
       </div>
 
       {/* 可滚动详情内容 */}
-      <div className="bg-surface-container-lowest/30 p-3 sm:p-4 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:p-4 xl:p-5">
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(340px,38vw)] lg:overflow-hidden xl:grid-cols-[132px_minmax(0,1fr)_minmax(360px,420px)] xl:gap-5 2xl:grid-cols-[150px_minmax(0,1fr)_400px] 2xl:gap-6">
+      <div className="bg-surface-container-lowest/30 p-2.5 sm:p-3 md:min-h-0 md:flex-1 md:overflow-hidden md:p-3 xl:p-4">
+        <div className="grid min-w-0 grid-cols-1 gap-3 md:h-full md:min-h-0 md:grid-cols-[92px_minmax(0,1fr)_minmax(280px,320px)] md:overflow-hidden xl:grid-cols-[112px_minmax(0,1fr)_minmax(320px,360px)] xl:gap-4 2xl:grid-cols-[132px_minmax(0,1fr)_380px] 2xl:gap-5">
         {/* README 目录 */}
-        <nav className="hidden min-h-0 min-w-0 overflow-y-auto border-r border-outline-variant/20 pr-4 custom-scrollbar xl:block">
-          <p className="mb-3 text-xs font-semibold text-on-surface">目录</p>
+        <nav className="hidden min-h-0 min-w-0 overflow-y-auto border-r border-outline-variant/20 pr-2 custom-scrollbar md:block xl:pr-3">
+          <p className="mb-2 text-xs font-semibold text-on-surface">目录</p>
           {readmeHeadings.length > 0 ? (
             <div className="space-y-1.5">
               {readmeHeadings.map((heading) => (
@@ -1481,7 +1481,7 @@ function RepoDetailPanel(props: {
                   key={heading.id}
                   type="button"
                   onClick={() => document.getElementById(heading.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                  className={`block w-full truncate rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-surface-container-high hover:text-primary ${
+                  className={`block w-full truncate rounded-md px-1.5 py-0.5 text-left text-[11px] transition-colors hover:bg-surface-container-high hover:text-primary xl:px-2 xl:py-1 xl:text-xs ${
                     heading.depth <= 2 ? 'font-medium text-on-surface' : 'pl-4 text-on-surface-variant'
                   }`}
                   title={heading.text}
@@ -1496,14 +1496,14 @@ function RepoDetailPanel(props: {
         </nav>
 
         {/* README 正文 */}
-        <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden">
           {/* README 内容 */}
-          <div className="flex min-h-[420px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-card-border bg-surface/60 p-3 shadow-sm backdrop-blur-sm sm:p-4 lg:min-h-0">
-            <div className="mb-3 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-h-[420px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-card-border bg-surface/60 p-2.5 shadow-sm backdrop-blur-sm sm:p-3 md:min-h-0">
+            <div className="mb-2.5 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <Icon name="description" size={18} className="text-primary" />
-                  <h3 className="font-headline-md text-xl font-semibold text-on-surface">README</h3>
+                  <h3 className="font-headline-md text-lg font-semibold text-on-surface xl:text-xl">README</h3>
                 </div>
                 <p className="mt-0.5 text-xs leading-relaxed text-on-surface-variant">
                   原文用于核对项目安装、API、示例和限制；右侧 AI 解析会基于当前缓存生成。
@@ -1550,7 +1550,7 @@ function RepoDetailPanel(props: {
         </div>
 
         {/* 右侧 AI 洞察栏 */}
-        <div className="min-h-[520px] min-w-0 lg:min-h-0">
+        <div className="min-h-[520px] min-w-0 md:min-h-0">
           <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-primary/20 bg-surface/80 p-3 shadow-sm backdrop-blur-sm sm:p-4">
             <div className="mb-2 flex shrink-0 items-start justify-between gap-3">
               <div className="min-w-0">
@@ -1727,11 +1727,17 @@ function RepoDetailPanel(props: {
               )}
 
               {aiDoc && (
-                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-3">
-                  <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-on-surface font-label-sm">
-                    <Icon name="analytics" size={14} /> 生成参数
-                  </h4>
-                  <div className="grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-2">
+                <details className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-2 text-[11px]">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold text-on-surface marker:hidden">
+                    <span className="inline-flex items-center gap-1">
+                      <Icon name="analytics" size={14} />
+                      生成信息
+                    </span>
+                    <span className="text-[10px] font-normal text-on-surface-variant">
+                      {compactNumber(aiDoc.inputTokens)} / {compactNumber(aiDoc.outputTokens)} tokens
+                    </span>
+                  </summary>
+                  <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-2">
                     <AiMetaItem label="模型" value={aiDoc.model} />
                     <AiMetaItem label="生成时间" value={formatDateTime(aiDoc.generatedAt)} />
                     <AiMetaItem label="输入" value={`${compactNumber(aiDoc.inputTokens)} tokens`} />
@@ -1739,7 +1745,7 @@ function RepoDetailPanel(props: {
                     <AiMetaItem label="Prompt" value={aiDoc.promptVersion} />
                     <AiMetaItem label="来源哈希" value={shortHash(aiDoc.sourceHash)} />
                   </div>
-                </div>
+                </details>
               )}
 
               {/* 仓库 Topics */}

@@ -286,7 +286,7 @@ export function AISearchPage(props: AISearchPageProps) {
 
           {/* 主搜索框 */}
           <div className="group relative w-full max-w-3xl">
-            <div className="relative flex flex-col gap-2 rounded-lg border border-card-border bg-surface-container-lowest p-2 shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25 sm:flex-row sm:items-center sm:pl-4">
+            <div className="relative flex flex-col gap-2 rounded-2xl border border-card-border bg-surface-container-lowest p-2 shadow-sm transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25 sm:flex-row sm:items-center sm:pl-4">
               <Icon name="search" size={22} className="hidden shrink-0 text-primary sm:block" />
               <input
                 type="text"
@@ -294,7 +294,7 @@ export function AISearchPage(props: AISearchPageProps) {
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder="帮我找几个好用的 React 动画库..."
-                className="h-11 min-w-0 flex-1 border-none bg-transparent px-3 font-body-md text-[15px] font-medium text-on-surface outline-none placeholder:text-on-surface-variant/70 sm:h-12 sm:px-0"
+                className="h-11 min-w-0 flex-1 rounded-xl border-0 bg-transparent px-3 font-body-md text-[15px] font-medium text-on-surface outline-none ring-0 placeholder:text-on-surface-variant/70 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 sm:h-12 sm:px-0"
               />
               <div className="flex shrink-0 items-center gap-2 sm:pr-1">
                 <button
