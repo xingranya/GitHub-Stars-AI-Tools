@@ -15,6 +15,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
+    "package:dmg": "node scripts/package-dmg.mjs",
     "verify:auth-data-flow": "node scripts/verify-auth-data-flow.mjs",
     "verify:auth-flow": "node scripts/verify-auth-flow.mjs",
     "verify:backup-flow": "node scripts/verify-backup-flow.mjs",

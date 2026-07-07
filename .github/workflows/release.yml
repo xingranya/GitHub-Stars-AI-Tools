@@ -260,3 +260,19 @@ jobs:
           prerelease: ${{ github.event.inputs.prerelease }}
           uploadPlainBinary: false
           args: ${{ matrix.args }} ${{ steps.windows-signing.outputs.tauri_config_arg }}
+
+      - name: Repackage macOS DMG with large Finder icons
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+          RUST_TARGET: ${{ matrix.rust_targets }}
+        run: |
+          pnpm --filter @gsat/desktop tauri build --target "$RUST_TARGET" --bundles app
+          dmg_path="$(pnpm --filter @gsat/desktop package:dmg -- --target "$RUST_TARGET" | tail -n 1)"
+          if [[ ! -f "$dmg_path" ]]; then
+            echo "未生成 DMG：$dmg_path" >&2
+            exit 1
+          fi
+          gh release upload "$TAG_NAME" "$dmg_path" --clobber

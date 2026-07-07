@@ -8,6 +8,25 @@
 
 **项目仓库**: [xingranya/GitHub-Stars-AI-Tools](https://github.com/xingranya/GitHub-Stars-AI-Tools)
 
+## 项目主要特点
+
+GitHub-Stars-AI-Tools 的核心定位不是“另一个 GitHub Stars 列表”，而是把长期收藏的开源项目沉淀成本地可检索、可解释、可继续追问的个人开源知识库。它适合 Stars 数量较多、经常需要回看项目用途、比较同类工具、整理技术栈和快速理解英文 README 的用户。
+
+| 特点 | 价值 | 对应能力 |
+| --- | --- | --- |
+| 本地优先的桌面客户端 | 普通用户安装一个客户端即可使用，不需要自行部署服务、配置 `.env` 或维护数据库 | Tauri 桌面应用、SQLite 本地数据库、应用内 GitHub Token 与 AI 设置 |
+| GitHub Stars 变成知识库 | 不只保存仓库名称，而是把 README、Topics、语言、标签、笔记和 AI 摘要统一沉淀 | Stars 同步、README 缓存、Markdown 渲染、仓库详情知识面板 |
+| AI 是增强层，不是门槛 | 用户可以只使用本地管理能力；需要 AI 时再接入 OpenAI、OpenAI 兼容接口或 Anthropic | 自定义请求地址、API Key、模型 ID；不强制 Embeddings 或向量模型 |
+| 面向中文理解的项目解析 | 解决英文 README、缩写项目名和复杂工具链难以快速理解的问题 | 中文摘要、中文定位、关键词、建议标签、README 梳理和右侧 AI 解析面板 |
+| 可持续对话的自然语言搜索 | 搜索不是一次性关键词匹配，可以结合最近查询上下文继续追问 | AI 搜索上下文、卡片式结果、总结与下一步操作入口 |
+| 自动整理标签图谱 | 减少手动给大量 Stars 分类的成本，让标签体系从已有收藏中自然生成 | AI 标签网络、标签建议、标签与仓库关联写入本地 |
+| 发现更好或相似项目 | 不只管理已经收藏的项目，还能根据选中的 Stars 继续探索 GitHub 上的替代方案 | AI 生成 GitHub Search 策略、相似项目推荐、候选项目状态管理 |
+| 长任务可见且可恢复 | 同步、README 抓取和 AI 分析耗时较长时，用户能看到进度和失败原因 | 后台 FIFO 任务队列、阶段/仓库名进度、失败卡片、重试动作 |
+| 上线友好的安全模型 | Token 和 AI Key 不写入前端存储，降低本机泄露风险 | macOS Keychain、Windows Credential Manager、Linux Secret Service |
+| 可验证的发布链路 | 开发者可以用统一脚本验收核心链路，发版时由 GitHub Actions 产出三端安装包 | `pnpm verify:mvp`、Tauri 发布配置校验、Release Desktop Apps 工作流 |
+
+一句话总结：GSAT 把 GitHub Stars 从“收藏夹”升级为“本地开源知识库”，重点解决同步、理解、检索、整理、推荐和跨设备注解备份这几条真实使用链路。
+
 ## ✨ 特性
 
 - 🔄 **本地同步** - 将 GitHub Stars 同步到本地数据库
@@ -141,7 +160,7 @@ pnpm package:desktop
 
 #### 产品体验
 
-- 顶部栏和侧边栏提供项目仓库入口，便于反馈问题、查看更新或参与贡献
+- 设置页提供项目仓库、问题反馈、许可证和开源组件鸣谢入口，首页保持同步、搜索和仓库管理优先
 - 同步、README 抓取、AI 摘要、AI 标签网络、Gist 导入导出和相似项目推荐都会显示任务阶段、当前仓库、进度和失败重试入口
 - 仓库列表支持卡片/表格视图、组合筛选、虚拟列表滚动和自适应窗口布局
 - README 原文会在详情面板内渲染 Markdown，并处理 GitHub 相对图片和链接
