@@ -26,7 +26,7 @@
 
 - `apps/desktop` 可启动开发环境。
 - React、TypeScript、Vite、Tauri 2 基础链路可运行。
-- 基础布局包含导航、工作台占位、设置页占位。
+- 基础布局包含导航、工作台和设置页的可用入口。
 
 **验证**：
 
@@ -49,17 +49,17 @@
 
 **依赖**：Task 1.1。
 
-### Task 1.3 建立本地 SQLite 与迁移机制
+### Task 1.3 建立本地 SQLite 初始化机制
 
-**描述**：实现数据库连接、schema migration、基础 Repository。
+**描述**：实现数据库连接、完整 schema 初始化、基础 Repository。本机测试期旧 SQLite 不做迁移，结构不兼容时删除并重建。
 
 **验收标准**：
 
 - 创建账号、仓库、README、注解、标签、任务表。
-- migration 可重复执行。
+- schema 初始化可重复执行。
 - 测试库可独立初始化。
 
-**验证**：数据库迁移测试通过。
+**验证**：数据库 schema 初始化测试通过。
 
 **依赖**：Task 1.2。
 
@@ -154,17 +154,17 @@
 
 ## 阶段 4：AI 知识库 MVP
 
-### Task 4.1 AI Provider 抽象
+### Task 4.1 AI 服务适配层
 
-**描述**：定义统一 AI Provider 接口，并实现至少一个 Provider。
+**描述**：定义统一 AI 服务接口，并接入 OpenAI、OpenAI 兼容接口与 Anthropic。
 
 **验收标准**：
 
 - 业务层只依赖接口。
-- 支持摘要、翻译、Embedding 的接口定义。
-- MiniMax 可作为后续实现接入，不影响业务层。
+- 支持摘要、翻译、查询理解的接口定义；Embedding 只作为后续可选能力边界保留。
+- 后续新增模型服务时不影响业务层。
 
-**验证**：用 mock provider 跑通摘要流程测试。
+**验证**：用离线请求桩覆盖 OpenAI Chat Completions、OpenAI 兼容接口与 Anthropic Messages 请求封装。
 
 **依赖**：Task 1.2。
 
@@ -211,17 +211,20 @@
 
 **依赖**：Task 3.3。
 
-### Task 5.2 向量索引
+### Task 5.2 zvec 本地向量索引
 
-**描述**：对 repo name、description、topics、summary_zh、README 片段生成向量。
+**描述**：后续在用户明确接受向量模型配置成本后，对 repo name、description、topics、summary_zh、README 片段生成向量。当前上线主链路不进入该任务，不要求向量模型，也不自动调用 Embeddings。
+
+**zvec 后续计划**：向量库接入采用“SQLite 事实源 + zvec 可重建索引层”的方案，分阶段推进技术验证、`VectorIndexPort` adapter、embedding 后台任务、混合检索和相似项目增强。详细计划见 [zvec 向量能力接入计划](./zvec-vector-roadmap.md)。
 
 **验收标准**：
 
 - 向量记录带 model_version 和 source_hash。
 - 内容不变不重复向量化。
 - 可按 query embedding 找到相似项目。
+- 没有 Embedding 配置或索引为空时，当前本地知识检索仍可正常工作。
 
-**验证**：固定测试查询能召回预期仓库。
+**验证**：后续固定测试查询能召回预期仓库；当前 MVP 验收只确认普通 OpenAI/Anthropic 聊天协议可完成摘要、标签网络、自然语言搜索计划和相似推荐计划。
 
 **依赖**：Task 4.2、Task 5.1。
 
@@ -279,21 +282,31 @@
 - 用户知道 AI 用量和失败原因。
 - 可重试失败任务。
 
-**验证**：构造失败任务并手动重试。
+**当前进展**：
+
+- AI README 摘要已记录输入/输出 tokens 估算值，写入 `repo_ai_documents` 并在知识面板展示。
+- SQLite 初始 schema 与持久化验证已覆盖 `input_tokens`、`output_tokens` 字段。
+- 失败任务卡片已提供同步、README、AI 摘要、Gist 导出和 Gist 导入的重试入口。
+- 任务进度卡片会展示当前阶段和正在处理的仓库名，欢迎页全屏任务也有同等反馈。
+- 发布包真实链路复核项已纳入 `verify:acceptance` 验收矩阵，覆盖本地数据库、应用设置存储、账号连接、Stars 同步、README 抓取、AI 摘要、AI 标签网络和相似推荐。
+- 设置页真实链路自检完成后会持久化发布包自检记录，只保存检查时间和通过、失败、跳过数量，不保存 Token、AI Key 或错误详情。
+- 真实链路复核只在打包应用内完成；用户安装后填写自己的 GitHub Token、AI 请求地址、API Key 和模型 ID 即可自检，不需要安装前配置环境变量或额外脚本。
+
+**验证**：`pnpm verify:task-feedback`、`pnpm verify:settings-flow`、`pnpm verify:acceptance`。
 
 **依赖**：Task 4.2、Task 5.2。
 
 ## 依赖与并行策略
 
 - 阶段 1 必须先完成。
-- 阶段 2 与阶段 3 前半段可部分并行：UI 可使用 mock 数据先做列表。
-- 阶段 4 的 `AI Provider 抽象` 可与 GitHub 同步并行。
+- 阶段 2 与阶段 3 前半段可部分并行：UI 使用本地持久化数据和离线验收数据验证列表。
+- 阶段 4 的 `AI 服务适配层` 可与 GitHub 同步并行。
 - 阶段 5 必须依赖中文摘要和查询 DSL。
 - 阶段 6 是增强项，可在 MVP 验收后推进。
 
 ## 验收检查点
 
-- Checkpoint A：项目可启动，本地数据库可迁移。
+- Checkpoint A：项目可启动，本地数据库可按最新 schema 初始化。
 - Checkpoint B：能同步 Stars 并展示列表。
 - Checkpoint C：能标签/笔记/搜索。
 - Checkpoint D：能展示中文摘要。

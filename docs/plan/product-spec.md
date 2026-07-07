@@ -66,7 +66,6 @@
   - 基础信息
   - 中文摘要
   - README 原文
-  - README 中文译文（V0.5）
   - 标签
   - 笔记
   - GitHub 链接
@@ -87,44 +86,44 @@
 
 - 设置页
   - GitHub 账号
-  - AI Provider
-  - MiniMax/OpenAI/DeepSeek/Ollama 配置
+  - AI 服务
+  - OpenAI、OpenAI 兼容接口和 Anthropic 配置
   - 数据导入导出
   - 成本与用量
 
-## MVP 范围
+## 当前上线范围
 
 - 桌面应用基础壳。
-- GitHub PAT 或 OAuth Device Flow 登录。
-- 全量同步 Star 元数据。
+- GitHub Personal Access Token 输入、校验与系统凭据管理器安全存储。
+- 全量同步与增量同步 Star 元数据。
 - Star 列表、关键词搜索、语言筛选、标签筛选。
 - 标签、笔记、批量打标。
 - README 抓取与缓存。
-- 中文摘要生成。
+- OpenAI、OpenAI 兼容接口与 Anthropic 配置，支持用户自定义请求地址、API Key 和模型 ID。
+- 中文摘要、关键词与推荐标签生成。
+- 自然语言上下文检索。
+- AI 标签网络生成。
+- 基于选中 Stars 的 GitHub 相似项目发现。
+- Gist 注解导入导出。
+- 任务进度、失败重试、AI 用量统计和发布包真实链路自检。
 - 项目详情页展示中文摘要和 README 原文。
 - 本地 SQLite 持久化。
 
-## V0.5 范围
+## 后续增强范围
 
-- 增量同步。
-- 全量重扫。
 - README 中文全文翻译。
-- 向量化索引。
-- 自然语言检索。
-- AI 推荐标签。
-- 检索结果解释。
-- 失败任务重试。
+- zvec 本地向量索引与混合语义检索。
+- 自动更新。
+- 更细粒度的成本预算和批量任务暂停/恢复。
+- 可选云同步。
 
-## V1.0 范围
+## 长期方向
 
 - 混合检索：FTS + 向量 + rerank。
-- 多模型 Provider 配置。
-- MiniMax 作为正式 Provider 选项。
-- Gist 注解导入导出。
+- 多 AI 服务配置：OpenAI、OpenAI 兼容接口与 Anthropic。
+- 后续新增 AI 服务时继续沿用统一请求配置，不影响业务层。
 - 多账号。
-- 成本统计。
-- 自动更新。
-- 可选云同步。
+- 团队协作功能。
 
 ## 非目标
 
