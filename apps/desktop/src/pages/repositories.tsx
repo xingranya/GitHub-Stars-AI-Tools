@@ -122,6 +122,8 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
   const [sortBy, setSortBy] = useState<SortBy>('recent');
   const [viewMode, setViewMode] = useState<ViewMode>('detail');
   const [batchAiLimit, setBatchAiLimit] = useState<BatchAiLimit>('all');
+  const [isBatchPanelOpen, setIsBatchPanelOpen] = useState(false);
+  const [isRepositoryListCollapsed, setIsRepositoryListCollapsed] = useState(false);
   const [listScrollTop, setListScrollTop] = useState(0);
   const [listViewportHeight, setListViewportHeight] = useState(720);
   const [recommendationSelection, setRecommendationSelection] = useState<Set<string>>(() => new Set());
@@ -339,11 +341,42 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
   }
 
   return (
-    <div className="grid h-full min-w-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-3 sm:p-4 lg:gap-5 lg:p-5 xl:grid-cols-[minmax(280px,28vw,400px)_minmax(0,1fr)] xl:gap-5 xl:p-6 2xl:grid-cols-[minmax(300px,25vw,420px)_minmax(0,1fr)]">
+    <div
+      className={`grid h-full min-w-0 flex-1 content-start grid-cols-1 gap-4 overflow-y-auto p-3 sm:p-4 lg:min-h-0 lg:content-stretch lg:overflow-hidden lg:p-5 xl:gap-5 xl:p-6 ${
+        isRepositoryListCollapsed
+          ? 'lg:grid-cols-[64px_minmax(0,1fr)]'
+          : 'lg:grid-cols-[minmax(260px,30vw,340px)_minmax(0,1fr)] xl:grid-cols-[minmax(280px,25vw,360px)_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]'
+      }`}
+    >
       {/* 左侧仓库列表 */}
       <div
-        className="flex h-[min(40dvh,420px)] min-h-[260px] min-w-0 flex-col overflow-hidden rounded-xl border border-card-border bg-surface-container-low shadow-sm xl:h-full"
+        className={`min-w-0 overflow-hidden rounded-xl border border-card-border bg-surface-container-low shadow-sm lg:h-full ${
+          isRepositoryListCollapsed ? 'hidden lg:flex lg:flex-col lg:items-center lg:justify-between lg:p-2' : 'flex h-[min(42dvh,460px)] min-h-[300px] flex-col lg:h-full'
+        }`}
       >
+        {isRepositoryListCollapsed ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setIsRepositoryListCollapsed(false)}
+              className="flex size-10 items-center justify-center rounded-lg border border-outline-variant/30 bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
+              title="展开 Star 列表"
+              aria-label="展开 Star 列表"
+            >
+              <Icon name="left_panel_open" size={20} />
+            </button>
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-on-surface-variant">
+              <Icon name="star" size={20} />
+              <span className="[writing-mode:vertical-rl] text-xs font-medium tracking-normal">
+                Star 列表
+              </span>
+              <span className="rounded-full border border-outline-variant/30 px-1.5 py-1 text-[10px]">
+                {compactNumber(filteredRepos.length)}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
         {/* 列表标题与控制区 */}
         <div className="shrink-0 border-b border-outline-variant/20 bg-surface/50 p-3 backdrop-blur-md sm:p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -353,6 +386,15 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                 {compactNumber(filteredRepos.length)} / {compactNumber(workspace.repositoryStats.total)} 个仓库
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => setIsRepositoryListCollapsed(true)}
+              className="hidden size-8 shrink-0 items-center justify-center rounded-lg border border-outline-variant/30 bg-surface text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary lg:flex"
+              title="收起 Star 列表"
+              aria-label="收起 Star 列表"
+            >
+              <Icon name="left_panel_close" size={18} />
+            </button>
             <div className="flex shrink-0 rounded-lg border border-outline-variant/30 bg-surface p-0.5">
               <button
                 type="button"
@@ -380,17 +422,25 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
               </button>
             </div>
           </div>
-          <details className="mb-3 rounded-lg border border-outline-variant/25 bg-surface-container-low/70 px-3 py-2">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-on-surface marker:hidden">
+          <div className="mb-3 overflow-hidden rounded-lg border border-primary/25 bg-primary/5">
+            <button
+              type="button"
+              onClick={() => setIsBatchPanelOpen((current) => !current)}
+              className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-left text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+              aria-expanded={isBatchPanelOpen}
+            >
               <span className="inline-flex min-w-0 items-center gap-1.5">
-                <Icon name="bolt" size={15} className="text-primary" />
+                <Icon name="bolt" size={15} />
                 批量处理
               </span>
-              <span className="text-[11px] font-normal text-on-surface-variant">
-                README、AI、相似发现
+              <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-normal text-primary/80">
+                {isBatchPanelOpen ? '点击收起' : '点击展开'}
+                <Icon name="expand_more" size={15} className={`transition-transform ${isBatchPanelOpen ? 'rotate-180' : ''}`} />
               </span>
-            </summary>
-            <div className="mt-3 flex gap-2">
+            </button>
+            {isBatchPanelOpen && (
+            <div className="border-t border-primary/15 px-1 pb-1">
+            <div className="mt-2 flex gap-2 px-2">
               <button
                 onClick={() =>
                   void (async () => {
@@ -445,7 +495,7 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                 {workspace.isBatchGeneratingAiDocuments ? '分析中' : '批量 AI'}
               </button>
             </div>
-            <div className="mb-3 flex flex-col gap-2 rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant sm:flex-row sm:items-center sm:justify-between">
+            <div className="mx-2 mb-3 mt-2 flex flex-col gap-2 rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-2">
                 <Icon name="speed" size={15} className="shrink-0 text-primary" />
                 <div className="min-w-0">
@@ -466,27 +516,27 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                 <option value="300">最多 300 个</option>
               </select>
             </div>
-          <div className="mb-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void handleFindSimilarOnGithub()}
-              disabled={
-                workspace.isFindingSimilarRepositories ||
-                !hasConnectedUser ||
-                selectedRecommendationIds.length === 0 ||
-                Boolean(aiConfigMessage)
-              }
-              title={recommendationActionTitle}
-              className="flex min-w-[180px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-primary transition-colors hover:bg-primary/15 disabled:opacity-60"
-            >
-              <Icon
-                name={workspace.isFindingSimilarRepositories ? 'progress_activity' : 'travel_explore'}
-                size={15}
-                className={workspace.isFindingSimilarRepositories ? 'animate-spin' : ''}
-              />
-              {workspace.isFindingSimilarRepositories ? '发现中' : `GitHub 相似发现${selectedRecommendationIds.length ? ` (${selectedRecommendationIds.length})` : ''}`}
-            </button>
-            {selectedRecommendationIds.length > 0 && (
+            <div className="mx-2 mb-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleFindSimilarOnGithub()}
+                disabled={
+                  workspace.isFindingSimilarRepositories ||
+                  !hasConnectedUser ||
+                  selectedRecommendationIds.length === 0 ||
+                  Boolean(aiConfigMessage)
+                }
+                title={recommendationActionTitle}
+                className="flex min-w-[180px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs text-primary transition-colors hover:bg-primary/15 disabled:opacity-60"
+              >
+                <Icon
+                  name={workspace.isFindingSimilarRepositories ? 'progress_activity' : 'travel_explore'}
+                  size={15}
+                  className={workspace.isFindingSimilarRepositories ? 'animate-spin' : ''}
+                />
+                {workspace.isFindingSimilarRepositories ? '发现中' : `GitHub 相似发现${selectedRecommendationIds.length ? ` (${selectedRecommendationIds.length})` : ''}`}
+              </button>
+              {selectedRecommendationIds.length > 0 && (
               <button
                 type="button"
                 onClick={() => setRecommendationSelection(new Set())}
@@ -494,8 +544,8 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
               >
                 清空
               </button>
-            )}
-          </div>
+              )}
+            </div>
           {workspace.batchAiSummary && (
             <BatchAiSummaryPanel summary={workspace.batchAiSummary} />
           )}
@@ -533,7 +583,9 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
               {recommendationActionNotice}
             </div>
           )}
-          </details>
+            </div>
+            )}
+          </div>
           <div className="flex flex-col gap-2">
             {/* 排序与搜索 */}
             <div className="flex gap-2">
@@ -687,6 +739,8 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
             </>
           )}
         </div>
+          </>
+        )}
       </div>
 
       {/* 详情面板 */}
@@ -1075,25 +1129,6 @@ function AiErrorPlaceholder({
   );
 }
 
-function KnowledgeStatusItem(props: { icon: string; label: string; value: string; active: boolean }) {
-  return (
-    <div className={`rounded-lg border px-3 py-2 ${
-      props.active
-        ? 'border-primary/20 bg-primary/5'
-        : 'border-outline-variant/25 bg-surface-container-low'
-    }`}
-    >
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-on-surface-variant">
-        <Icon name={props.icon} size={13} />
-        {props.label}
-      </div>
-      <p className={`truncate text-[12px] font-semibold ${props.active ? 'text-primary' : 'text-on-surface-variant'}`}>
-        {props.value}
-      </p>
-    </div>
-  );
-}
-
 function AiMetaItem(props: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-lg border border-outline-variant/20 bg-surface-container-low px-2.5 py-2">
@@ -1349,6 +1384,7 @@ function RepoDetailPanel(props: {
   const readmeStatusLabel = detail?.readme ? 'README 已缓存' : repo.hasReadme ? '列表显示已缓存，正在载入详情' : 'README 待抓取';
   const aiStatusLabel = aiDoc ? 'AI 已解析' : repo.aiSummary ? '列表已有摘要，正在载入详情' : 'AI 待解析';
   const knowledgeTitle = buildKnowledgeTitle(repo, aiDoc?.keywords ?? repo.aiKeywords);
+  const fallbackAiSummary = repo.aiSummary?.trim();
   const localizedProjectPosition = buildLocalizedProjectPosition(
     repo,
     aiDoc?.keywords ?? repo.aiKeywords,
@@ -1360,6 +1396,10 @@ function RepoDetailPanel(props: {
     ...(aiDoc?.keywords ?? repo.aiKeywords),
     ...repo.topics,
   ]).slice(0, 10);
+  const readmeHeadings = useMemo(
+    () => extractReadmeHeadings(detail?.readme?.rawMarkdown ?? '').slice(0, 12),
+    [detail?.readme?.rawMarkdown],
+  );
   const canApplySuggestedTags = Boolean(aiDoc?.suggestedTags.length);
 
   async function submitRenameTag(tag: TagItem) {
@@ -1386,27 +1426,27 @@ function RepoDetailPanel(props: {
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-card-border glass-panel shadow-sm">
+    <div className="flex min-w-0 flex-col overflow-visible rounded-xl border border-card-border glass-panel shadow-sm lg:min-h-0 lg:flex-1 lg:overflow-hidden">
       {/* 详情标题区 */}
-      <div className="flex shrink-0 flex-col gap-3 border-b border-card-border bg-surface/45 p-3 backdrop-blur-md sm:p-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex shrink-0 flex-col gap-2 border-b border-card-border bg-surface/45 px-3 py-2.5 backdrop-blur-md lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="mb-2 flex min-w-0 items-center gap-2">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-outline-variant/30 bg-surface-container-lowest p-1">
-              <Icon name="book" size={18} className="text-on-surface-variant" />
+          <div className="mb-1.5 flex min-w-0 items-center gap-2">
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-outline-variant/30 bg-surface-container-lowest p-1">
+              <Icon name="book" size={16} className="text-on-surface-variant" />
             </div>
-            <h2 className="min-w-0 flex-1 truncate font-headline-lg text-headline-lg font-bold tracking-tight text-on-surface">
+            <h2 className="min-w-0 flex-1 truncate font-headline-lg text-2xl font-bold tracking-tight text-on-surface">
               {repo.fullName}
             </h2>
           </div>
-          <p className="line-clamp-2 max-w-4xl text-sm leading-relaxed text-on-surface-variant">{repo.description ?? '暂无描述'}</p>
+          <p className="line-clamp-1 max-w-4xl text-sm leading-relaxed text-on-surface-variant">{repo.description ?? '暂无描述'}</p>
           {/* 统计信息 */}
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-on-surface-variant sm:gap-3">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant sm:gap-3">
             <div className="flex items-center gap-1.5 text-sm text-on-surface-variant">
-              <Icon name="star" size={18} />
+              <Icon name="star" size={16} />
               <span className="font-medium">{compactNumber(repo.starsCount)}</span>
             </div>
             <div className="flex items-center gap-1.5 text-sm text-on-surface-variant">
-              <Icon name="fork_right" size={18} />
+              <Icon name="fork_right" size={16} />
               <span className="font-medium">{compactNumber(repo.forksCount)}</span>
             </div>
             <div className="flex items-center gap-1.5 text-sm text-on-surface-variant">
@@ -1422,26 +1462,50 @@ function RepoDetailPanel(props: {
           href={repo.htmlUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-low px-3 py-2 text-sm font-medium text-on-surface transition-colors hover:border-primary/40 hover:text-primary"
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-low px-3 py-1.5 text-sm font-medium text-on-surface transition-colors hover:border-primary/40 hover:text-primary"
         >
           <Icon name="open_in_new" size={18} /> 在浏览器打开
         </a>
       </div>
 
       {/* 可滚动详情内容 */}
-      <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar bg-surface-container-lowest/30 p-3 sm:p-4 lg:p-5 xl:p-6">
-        <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(400px,480px)] 2xl:gap-6">
-        {/* 主要内容（README 与笔记） */}
-        <div className="min-w-0 flex-1 space-y-5">
+      <div className="bg-surface-container-lowest/30 p-3 sm:p-4 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:p-4 xl:p-5">
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(340px,38vw)] lg:overflow-hidden xl:grid-cols-[132px_minmax(0,1fr)_minmax(360px,420px)] xl:gap-5 2xl:grid-cols-[150px_minmax(0,1fr)_400px] 2xl:gap-6">
+        {/* README 目录 */}
+        <nav className="hidden min-h-0 min-w-0 overflow-y-auto border-r border-outline-variant/20 pr-4 custom-scrollbar xl:block">
+          <p className="mb-3 text-xs font-semibold text-on-surface">目录</p>
+          {readmeHeadings.length > 0 ? (
+            <div className="space-y-1.5">
+              {readmeHeadings.map((heading) => (
+                <button
+                  key={heading.id}
+                  type="button"
+                  onClick={() => document.getElementById(heading.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  className={`block w-full truncate rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-surface-container-high hover:text-primary ${
+                    heading.depth <= 2 ? 'font-medium text-on-surface' : 'pl-4 text-on-surface-variant'
+                  }`}
+                  title={heading.text}
+                >
+                  {heading.text}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs leading-relaxed text-on-surface-variant">抓取 README 后显示章节目录。</p>
+          )}
+        </nav>
+
+        {/* README 正文 */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden">
           {/* README 内容 */}
-          <div className="rounded-xl border border-card-border bg-surface/60 p-4 shadow-sm backdrop-blur-sm sm:p-5">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-h-[420px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-card-border bg-surface/60 p-3 shadow-sm backdrop-blur-sm sm:p-4 lg:min-h-0">
+            <div className="mb-3 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <Icon name="description" size={20} className="text-primary" />
-                  <h3 className="font-headline-md text-lg font-semibold text-on-surface">README</h3>
+                  <Icon name="description" size={18} className="text-primary" />
+                  <h3 className="font-headline-md text-xl font-semibold text-on-surface">README</h3>
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">
+                <p className="mt-0.5 text-xs leading-relaxed text-on-surface-variant">
                   原文用于核对项目安装、API、示例和限制；右侧 AI 解析会基于当前缓存生成。
                 </p>
               </div>
@@ -1457,17 +1521,19 @@ function RepoDetailPanel(props: {
               </div>
             )}
             {isLoadingDetail ? (
-              <div className="flex items-center justify-center py-8">
+              <div className="flex min-h-0 flex-1 items-center justify-center py-8">
                 <Icon name="progress_activity" size={24} className="text-primary animate-spin" />
               </div>
             ) : detail?.readme ? (
-              <ReadmeRenderer
-                markdown={detail.readme.rawMarkdown}
-                repositoryFullName={repo.fullName}
-                sourcePath={detail.readme.sourcePath}
-              />
+              <div className="min-h-0 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                <ReadmeRenderer
+                  markdown={detail.readme.rawMarkdown}
+                  repositoryFullName={repo.fullName}
+                  sourcePath={detail.readme.sourcePath}
+                />
+              </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-on-surface-variant gap-2">
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 py-8 text-on-surface-variant">
                 <Icon name="book" size={48} className="opacity-30" />
                 <p className="font-body-md text-sm">该仓库暂无 README 缓存，可以先抓取 README，也可以直接点击 AI 解析自动补抓。</p>
                 <button
@@ -1481,270 +1547,55 @@ function RepoDetailPanel(props: {
               </div>
             )}
           </div>
-
-          {/* 笔记 */}
-          <div className="rounded-xl border border-card-border bg-surface/60 p-4 shadow-sm backdrop-blur-sm sm:p-5 xl:p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Icon name="edit_note" size={20} className="text-primary" />
-                <h3 className="font-headline-md text-lg font-semibold text-on-surface">个人笔记</h3>
-              </div>
-              <button
-                onClick={() => void onSaveAnnotation()}
-                disabled={isSavingAnnotation}
-                className="px-3 py-1.5 rounded-lg bg-primary text-white text-sm font-medium hover:brightness-110 transition-all flex items-center gap-2 shadow-sm disabled:opacity-60"
-              >
-                <Icon name="save" size={16} /> 保存笔记和状态
-              </button>
-            </div>
-            {annotationMessage && (
-              <div className="mb-4 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-xs text-primary">
-                {annotationMessage}
-              </div>
-            )}
-            <div className="mb-4 grid gap-4 md:grid-cols-[180px_1fr]">
-              <label className="grid gap-2 text-xs font-label-sm text-on-surface-variant">
-                阅读状态
-                <select
-                  value={readingStatusDraft}
-                  onChange={(event) => onReadingStatusChange(event.target.value as ReadingStatus)}
-                  className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="unread">未读</option>
-                  <option value="later">稍后阅读</option>
-                  <option value="read">已读</option>
-                </select>
-              </label>
-
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-label-sm text-on-surface-variant">仓库标签</span>
-                  {isSavingTag && <span className="text-[11px] text-primary">保存标签中...</span>}
-                </div>
-                {tags.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {tags.map((tag) => {
-                      const isSelected = selectedTagIds.has(tag.id);
-                      return (
-                        <button
-                          key={tag.id}
-                          type="button"
-                          onClick={() => void onToggleRepositoryTag(tag)}
-                          disabled={isSavingTag}
-                          className={`rounded-full border px-2.5 py-1 text-xs font-label-sm transition-all disabled:opacity-60 ${
-                            isSelected
-                              ? 'border-primary bg-primary/10 text-primary'
-                              : 'border-outline-variant/30 bg-surface-container-low text-on-surface-variant hover:border-primary/40 hover:text-on-surface'
-                          }`}
-                          style={
-                            tag.color && isSelected
-                              ? { backgroundColor: `${tag.color}20`, borderColor: tag.color, color: tag.color }
-                              : undefined
-                          }
-                        >
-                          <Icon name="label" size={12} className="mr-1 inline-block align-[-2px]" />
-                          {tag.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-xs text-on-surface-variant">还没有标签，可以先创建一个用于分类。</p>
-                )}
-              </div>
-            </div>
-            <form
-              onSubmit={(event) => void onCreateTag(event)}
-              className="mb-4 grid gap-2 sm:grid-cols-[1fr_44px_auto]"
-            >
-              <input
-                value={newTagName}
-                onChange={(event) => onNewTagNameChange(event.target.value)}
-                placeholder="新标签名称"
-                className="rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-              <input
-                aria-label="标签颜色"
-                type="color"
-                value={newTagColor}
-                onChange={(event) => onNewTagColorChange(event.target.value)}
-                className="h-10 w-full rounded-lg border border-outline-variant/30 bg-surface-container-low p-1"
-              />
-              <button
-                type="submit"
-                disabled={isSavingTag || newTagName.trim().length === 0}
-                className="rounded-lg border border-card-border bg-surface-container-high px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-container-highest disabled:opacity-60"
-              >
-                添加标签
-              </button>
-            </form>
-            {tags.length > 0 && (
-              <details className="mb-4 rounded-lg border border-outline-variant/20 bg-surface-container-low/50 px-3 py-2 text-xs text-on-surface-variant">
-                <summary className="cursor-pointer font-label-sm text-on-surface">管理标签</summary>
-                <div className="mt-3 grid gap-2">
-                  {tags.map((tag) => {
-                    const isEditing = editingTagId === tag.id;
-                    const isConfirmingDelete = deleteTagId === tag.id;
-
-                    return (
-                      <div key={tag.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
-                        {isEditing ? (
-                          <input
-                            value={editingTagName}
-                            onChange={(event) => setEditingTagName(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                void submitRenameTag(tag);
-                              }
-                              if (event.key === 'Escape') {
-                                setEditingTagId(null);
-                                setEditingTagName('');
-                              }
-                            }}
-                            className="min-w-0 rounded-md border border-outline-variant/30 bg-surface px-2 py-1 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                            autoFocus
-                          />
-                        ) : (
-                          <span className="truncate">{tag.name}</span>
-                        )}
-                        {isEditing ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => void submitRenameTag(tag)}
-                              disabled={isSavingTag || editingTagName.trim().length === 0}
-                              className="rounded-md px-2 py-1 text-primary hover:bg-primary/10 disabled:opacity-60"
-                            >
-                              保存
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingTagId(null);
-                                setEditingTagName('');
-                              }}
-                              disabled={isSavingTag}
-                              className="rounded-md px-2 py-1 text-on-surface-variant hover:bg-surface-container-high disabled:opacity-60"
-                            >
-                              取消
-                            </button>
-                          </>
-                        ) : isConfirmingDelete ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => void confirmDeleteTag(tag)}
-                              disabled={isSavingTag}
-                              className="rounded-md px-2 py-1 text-error hover:bg-error/10 disabled:opacity-60"
-                            >
-                              确认删除
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteTagId(null)}
-                              disabled={isSavingTag}
-                              className="rounded-md px-2 py-1 text-on-surface-variant hover:bg-surface-container-high disabled:opacity-60"
-                            >
-                              取消
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingTagId(tag.id);
-                                setEditingTagName(tag.name);
-                                setDeleteTagId(null);
-                              }}
-                              disabled={isSavingTag}
-                              className="rounded-md px-2 py-1 text-primary hover:bg-primary/10 disabled:opacity-60"
-                            >
-                              重命名
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDeleteTagId(tag.id);
-                                setEditingTagId(null);
-                                setEditingTagName('');
-                              }}
-                              disabled={isSavingTag}
-                              className="rounded-md px-2 py-1 text-error hover:bg-error/10 disabled:opacity-60"
-                            >
-                              删除
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </details>
-            )}
-            <textarea
-              value={noteDraft}
-              onChange={(e) => onNoteChange(e.target.value)}
-              placeholder="为这个仓库写下你的笔记..."
-              className="w-full min-h-[120px] bg-surface-container-low rounded-lg border border-outline-variant/30 p-3 text-sm text-on-surface font-body-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary resize-y"
-            />
-          </div>
         </div>
 
         {/* 右侧 AI 洞察栏 */}
-        <div className="min-w-0 space-y-5">
-          <div className="flex flex-col rounded-xl border border-primary/20 bg-surface/80 p-4 shadow-sm backdrop-blur-sm sm:p-5 xl:sticky xl:top-0">
-            <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-h-[520px] min-w-0 lg:min-h-0">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-primary/20 bg-surface/80 p-3 shadow-sm backdrop-blur-sm sm:p-4">
+            <div className="mb-2 flex shrink-0 items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <Icon name="auto_awesome" size={20} className="text-primary" />
-                  <h3 className="font-headline-md text-base font-semibold text-primary">AI 项目知识卡</h3>
+                  <Icon name="auto_awesome" size={18} className="text-primary" />
+                  <h3 className="font-headline-md text-lg font-semibold text-primary">AI 项目知识卡</h3>
                 </div>
-                <p className="mt-1 text-[12px] leading-relaxed text-on-surface-variant">{knowledgeTitle}</p>
-                <p className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-2.5 py-1.5 text-[12px] leading-relaxed text-on-surface">
+                <p className="mt-0.5 line-clamp-1 text-[12px] leading-relaxed text-on-surface-variant">{knowledgeTitle}</p>
+                <p className="mt-1.5 line-clamp-2 rounded-md border border-primary/15 bg-primary/5 px-2 py-1 text-[12px] leading-relaxed text-on-surface">
                   <span className="mr-1 font-semibold text-primary">中文名称/定位</span>
                   {localizedProjectPosition.text}
                 </p>
               </div>
-              <div className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
+              <div className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
                 GSAT
               </div>
             </div>
-            <div className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <button
-                onClick={() => void onGenerateAiDocument()}
-                disabled={!canGenerateAiDocument}
-                className="flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-white shadow-sm transition-all hover:brightness-110 disabled:opacity-60"
-                title={aiActionTitle}
+            <div className="mb-2 flex shrink-0 flex-wrap gap-1.5 text-[11px]">
+              <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${
+                detail?.readme
+                  ? 'border-primary/20 bg-primary/10 text-primary'
+                  : 'border-outline-variant/30 bg-surface-container-low text-on-surface-variant'
+              }`}
               >
-                <Icon name={isGeneratingAiDocument ? 'progress_activity' : 'auto_awesome'} size={16} className={isGeneratingAiDocument ? 'animate-spin' : ''} />
-                {isGeneratingAiDocument ? '解析中...' : aiDoc ? '更新 AI 解析' : 'AI 解析'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void onFetchReadme()}
-                disabled={isFetchingReadme || isLoadingDetail}
-                className="flex items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-low px-3 py-2 text-xs font-medium text-on-surface transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-60"
-                title={detail?.readme ? '更新 README 缓存' : '抓取当前 README'}
+                <Icon name="description" size={13} />
+                {readmeStatusLabel}
+              </span>
+              <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 ${
+                aiDoc
+                  ? 'border-primary/20 bg-primary/10 text-primary'
+                  : 'border-outline-variant/30 bg-surface-container-low text-on-surface-variant'
+              }`}
               >
-                <Icon name={isFetchingReadme ? 'progress_activity' : 'description'} size={16} className={isFetchingReadme ? 'animate-spin' : ''} />
-                {isFetchingReadme ? '抓取中' : detail?.readme ? '更新 README' : '抓取 README'}
-              </button>
-            </div>
-            <div className="mb-4 grid grid-cols-2 gap-2">
-              <KnowledgeStatusItem icon="description" label="README" value={readmeStatusLabel} active={Boolean(detail?.readme)} />
-              <KnowledgeStatusItem icon="psychology" label="AI 解析" value={aiStatusLabel} active={Boolean(aiDoc)} />
-              <KnowledgeStatusItem icon="star" label="Stars" value={compactNumber(repo.starsCount)} active />
-              <KnowledgeStatusItem icon="fork_right" label="Forks" value={compactNumber(repo.forksCount)} active />
+                <Icon name="psychology" size={13} />
+                {aiStatusLabel}
+              </span>
             </div>
             {visibleKnowledgeTags.length > 0 && (
-              <div className="mb-4 rounded-lg border border-outline-variant/20 bg-surface-container-low/60 px-3 py-2">
-                <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-on-surface">
+              <div className="mb-2 rounded-md border border-outline-variant/20 bg-surface-container-low/60 px-2 py-1.5">
+                <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-on-surface">
                   <Icon name="hub" size={13} />
                   项目画像
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {visibleKnowledgeTags.map((tag) => (
+                  {visibleKnowledgeTags.slice(0, 8).map((tag) => (
                     <span key={tag} className="rounded-md bg-surface-container-high px-2 py-0.5 text-[10px] text-on-surface-variant">
                       {tag}
                     </span>
@@ -1771,7 +1622,16 @@ function RepoDetailPanel(props: {
                 retryTitle={aiActionTitle}
               />
             )}
-            <div className="space-y-3">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 custom-scrollbar">
+              {isGeneratingAiDocument && (
+                <div className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-3 text-[12px] leading-relaxed text-primary">
+                  <div className="mb-1.5 flex items-center gap-1.5 font-semibold">
+                    <Icon name="progress_activity" size={14} className="animate-spin" />
+                    正在生成 AI 解析
+                  </div>
+                  <p>正在基于 README 生成中文摘要、关键词和建议标签。生成完成后会自动刷新这里的内容。</p>
+                </div>
+              )}
               {/* AI 摘要 */}
               {aiDoc ? (
                 <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-3">
@@ -1780,8 +1640,18 @@ function RepoDetailPanel(props: {
                   </h4>
                   <p className="text-[12px] text-on-surface-variant leading-relaxed">{aiDoc.summaryZh}</p>
                 </div>
+              ) : fallbackAiSummary ? (
+                <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-3">
+                  <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-on-surface font-label-sm">
+                    <Icon name="summarize" size={14} /> 当前摘要
+                  </h4>
+                  <p className="text-[12px] leading-relaxed text-on-surface-variant">{fallbackAiSummary}</p>
+                  <p className="mt-2 text-[11px] leading-relaxed text-on-surface-variant">
+                    完整 AI 解析生成后，会补充 README 梳理、关键词和建议标签。
+                  </p>
+                </div>
               ) : (
-                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-outline-variant/30 bg-surface-container-low/40 px-3 py-6 text-on-surface-variant">
+                <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-outline-variant/30 bg-surface-container-low/40 px-3 py-4 text-on-surface-variant">
                   <Icon name="psychology" size={32} className="opacity-30" />
                   <p className="text-[12px]">暂无 AI 解析</p>
                   <p className="max-w-[260px] text-center text-[11px] leading-relaxed">点击 AI 解析后，会生成中文摘要、README 梳理、关键词和建议标签。</p>
@@ -1890,6 +1760,230 @@ function RepoDetailPanel(props: {
                   </div>
                 </div>
               )}
+
+              <div className="rounded-lg border border-outline-variant/20 bg-surface-container-low/70 px-3 py-3">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h4 className="flex items-center gap-1 text-xs font-semibold text-on-surface font-label-sm">
+                    <Icon name="edit_note" size={14} /> 笔记与标签
+                  </h4>
+                  <button
+                    onClick={() => void onSaveAnnotation()}
+                    disabled={isSavingAnnotation}
+                    className="rounded-md bg-primary px-2 py-1 text-[10px] font-medium text-white transition-colors hover:brightness-110 disabled:opacity-60"
+                  >
+                    {isSavingAnnotation ? '保存中' : '保存'}
+                  </button>
+                </div>
+                {annotationMessage && (
+                  <div className="mb-3 rounded-md border border-primary/20 bg-primary/10 px-2 py-1.5 text-[11px] text-primary">
+                    {annotationMessage}
+                  </div>
+                )}
+                <label className="mb-3 grid gap-1.5 text-[11px] font-label-sm text-on-surface-variant">
+                  阅读状态
+                  <select
+                    value={readingStatusDraft}
+                    onChange={(event) => onReadingStatusChange(event.target.value as ReadingStatus)}
+                    className="rounded-md border border-outline-variant/30 bg-surface px-2 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="unread">未读</option>
+                    <option value="later">稍后阅读</option>
+                    <option value="read">已读</option>
+                  </select>
+                </label>
+                <div className="mb-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-label-sm text-on-surface-variant">仓库标签</span>
+                    {isSavingTag && <span className="text-[10px] text-primary">保存中</span>}
+                  </div>
+                  {tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {tags.map((tag) => {
+                        const isSelected = selectedTagIds.has(tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => void onToggleRepositoryTag(tag)}
+                            disabled={isSavingTag}
+                            className={`rounded-md border px-2 py-0.5 text-[10px] font-label-sm transition-colors disabled:opacity-60 ${
+                              isSelected
+                                ? 'border-primary bg-primary/10 text-primary'
+                                : 'border-outline-variant/30 bg-surface text-on-surface-variant hover:border-primary/40 hover:text-on-surface'
+                            }`}
+                            style={
+                              tag.color && isSelected
+                                ? { backgroundColor: `${tag.color}20`, borderColor: tag.color, color: tag.color }
+                                : undefined
+                            }
+                          >
+                            {tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-on-surface-variant">还没有标签。</p>
+                  )}
+                </div>
+                <form
+                  onSubmit={(event) => void onCreateTag(event)}
+                  className="mb-3 grid grid-cols-[1fr_34px] gap-2"
+                >
+                  <input
+                    value={newTagName}
+                    onChange={(event) => onNewTagNameChange(event.target.value)}
+                    placeholder="新标签"
+                    className="min-w-0 rounded-md border border-outline-variant/30 bg-surface px-2 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <input
+                    aria-label="标签颜色"
+                    type="color"
+                    value={newTagColor}
+                    onChange={(event) => onNewTagColorChange(event.target.value)}
+                    className="h-8 w-full rounded-md border border-outline-variant/30 bg-surface p-1"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSavingTag || newTagName.trim().length === 0}
+                    className="col-span-2 rounded-md border border-card-border bg-surface-container-high px-2 py-1.5 text-xs text-on-surface transition-colors hover:bg-surface-container-highest disabled:opacity-60"
+                  >
+                    添加标签
+                  </button>
+                </form>
+                {tags.length > 0 && (
+                  <details className="mb-3 rounded-md border border-outline-variant/20 bg-surface/70 px-2 py-1.5 text-[11px] text-on-surface-variant">
+                    <summary className="cursor-pointer font-label-sm text-on-surface">管理标签</summary>
+                    <div className="mt-2 grid gap-1.5">
+                      {tags.map((tag) => {
+                        const isEditing = editingTagId === tag.id;
+                        const isConfirmingDelete = deleteTagId === tag.id;
+
+                        return (
+                          <div key={tag.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-1.5">
+                            {isEditing ? (
+                              <input
+                                value={editingTagName}
+                                onChange={(event) => setEditingTagName(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    void submitRenameTag(tag);
+                                  }
+                                  if (event.key === 'Escape') {
+                                    setEditingTagId(null);
+                                    setEditingTagName('');
+                                  }
+                                }}
+                                className="min-w-0 rounded-md border border-outline-variant/30 bg-surface px-2 py-1 text-[11px] text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                autoFocus
+                              />
+                            ) : (
+                              <span className="truncate">{tag.name}</span>
+                            )}
+                            {isEditing ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void submitRenameTag(tag)}
+                                  disabled={isSavingTag || editingTagName.trim().length === 0}
+                                  className="rounded-md px-1.5 py-1 text-primary hover:bg-primary/10 disabled:opacity-60"
+                                >
+                                  保存
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingTagId(null);
+                                    setEditingTagName('');
+                                  }}
+                                  disabled={isSavingTag}
+                                  className="rounded-md px-1.5 py-1 text-on-surface-variant hover:bg-surface-container-high disabled:opacity-60"
+                                >
+                                  取消
+                                </button>
+                              </>
+                            ) : isConfirmingDelete ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void confirmDeleteTag(tag)}
+                                  disabled={isSavingTag}
+                                  className="rounded-md px-1.5 py-1 text-error hover:bg-error/10 disabled:opacity-60"
+                                >
+                                  删除
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteTagId(null)}
+                                  disabled={isSavingTag}
+                                  className="rounded-md px-1.5 py-1 text-on-surface-variant hover:bg-surface-container-high disabled:opacity-60"
+                                >
+                                  取消
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingTagId(tag.id);
+                                    setEditingTagName(tag.name);
+                                    setDeleteTagId(null);
+                                  }}
+                                  disabled={isSavingTag}
+                                  className="rounded-md px-1.5 py-1 text-primary hover:bg-primary/10 disabled:opacity-60"
+                                >
+                                  改名
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDeleteTagId(tag.id);
+                                    setEditingTagId(null);
+                                    setEditingTagName('');
+                                  }}
+                                  disabled={isSavingTag}
+                                  className="rounded-md px-1.5 py-1 text-error hover:bg-error/10 disabled:opacity-60"
+                                >
+                                  删除
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
+                )}
+                <textarea
+                  value={noteDraft}
+                  onChange={(e) => onNoteChange(e.target.value)}
+                  placeholder="为这个仓库写下你的笔记..."
+                  className="min-h-[88px] w-full resize-y rounded-md border border-outline-variant/30 bg-surface px-2 py-2 text-xs text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+            <div className="mt-3 grid shrink-0 gap-2 border-t border-outline-variant/20 pt-2 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void onFetchReadme()}
+                disabled={isFetchingReadme || isLoadingDetail}
+                className="flex items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-low px-3 py-1.5 text-xs font-medium text-on-surface transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-60"
+                title={detail?.readme ? '更新 README 缓存' : '抓取当前 README'}
+              >
+                <Icon name={isFetchingReadme ? 'progress_activity' : 'description'} size={16} className={isFetchingReadme ? 'animate-spin' : ''} />
+                {isFetchingReadme ? '抓取中' : detail?.readme ? '更新 README' : '抓取 README'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void onGenerateAiDocument()}
+                disabled={!canGenerateAiDocument}
+                className="flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:brightness-110 disabled:opacity-60"
+                title={aiActionTitle}
+              >
+                <Icon name={isGeneratingAiDocument ? 'progress_activity' : 'auto_awesome'} size={16} className={isGeneratingAiDocument ? 'animate-spin' : ''} />
+                {isGeneratingAiDocument ? '解析中...' : aiDoc ? '更新 AI 解析' : 'AI 解析'}
+              </button>
             </div>
           </div>
         </div>
@@ -1897,6 +1991,56 @@ function RepoDetailPanel(props: {
       </div>
     </div>
   );
+}
+
+type ReadmeHeadingItem = {
+  id: string;
+  text: string;
+  depth: number;
+};
+
+function extractReadmeHeadings(markdown: string): ReadmeHeadingItem[] {
+  const slugCounts = new Map<string, number>();
+  const headings: ReadmeHeadingItem[] = [];
+  const lines = markdown.split(/\r?\n/);
+
+  for (const line of lines) {
+    const match = /^(#{1,3})\s+(.+?)\s*#*\s*$/.exec(line.trim());
+    if (!match) {
+      continue;
+    }
+
+    const text = match[2]
+      .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+      .replace(/[`*_~]/g, '')
+      .trim();
+    if (!text) {
+      continue;
+    }
+
+    const baseSlug = createReadmeHeadingSlug(text) || 'section';
+    const currentCount = slugCounts.get(baseSlug) ?? 0;
+    slugCounts.set(baseSlug, currentCount + 1);
+    headings.push({
+      id: currentCount === 0 ? baseSlug : `${baseSlug}-${currentCount}`,
+      text: truncateText(text, 28),
+      depth: match[1].length,
+    });
+  }
+
+  return headings;
+}
+
+function createReadmeHeadingSlug(text: string) {
+  return text
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 function formatRelativeTime(iso: string): string {

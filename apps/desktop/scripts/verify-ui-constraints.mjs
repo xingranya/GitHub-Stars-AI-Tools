@@ -115,7 +115,7 @@ assert.match(
 );
 assert.match(repositoriesPage, /<span className="hidden lg:block">语言<\/span>[\s\S]*?<span className="hidden lg:block">状态<\/span>/, '仓库表格语言和状态表头必须跟随 lg 断点显示');
 assert.match(repositoriesPage, /<span className="hidden items-center gap-1\.5 text-sm lg:flex">[\s\S]*?<span className="hidden flex-wrap gap-1 lg:flex">/, '仓库表格语言和状态单元格必须跟随 lg 断点显示');
-assert.match(repositoriesPage, /<h2 className="min-w-0 flex-1 truncate font-headline-lg text-headline-lg font-bold tracking-tight text-on-surface">/, '仓库详情标题必须允许长仓库名在 flex 行内收缩，避免挤压右侧徽标');
+assert.match(repositoriesPage, /<h2 className="[^"]*min-w-0[^"]*flex-1[^"]*truncate[^"]*font-headline-lg[^"]*font-bold[^"]*tracking-tight[^"]*text-on-surface[^"]*">/, '仓库详情标题必须允许长仓库名在 flex 行内收缩，避免挤压右侧徽标');
 assert.match(repositoriesPage, /function AiMetaItem[\s\S]*?\[overflow-wrap:anywhere\]/, 'AI 生成参数值必须允许长模型 ID 或哈希换行展示');
 assert.match(repositoriesPage, /<div className="grid grid-cols-1 gap-2 text-\[11px\] sm:grid-cols-2">[\s\S]*?<AiMetaItem label="模型"/, 'AI 生成参数在窄窗口必须单列展示，避免长模型名被截断');
 

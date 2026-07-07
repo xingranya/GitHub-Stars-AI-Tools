@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { AppLayout } from '@/components/app-layout';
-import { AppTitleBar } from '@/components/app-title-bar';
 import { WelcomeFlow } from '@/components/welcome-flow';
 import { WorkspaceProvider, useWorkspace } from '@/providers/workspace-provider';
 import { SettingsProvider, useAppSettings } from '@/providers/settings-provider';
@@ -529,10 +528,7 @@ export function App() {
     <SettingsProvider>
       <WorkspaceProvider>
         <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-background">
-          <AppTitleBar />
-          <div className="min-h-0 flex-1 pt-titlebar">
-            <AppContent />
-          </div>
+          <AppContent />
         </div>
       </WorkspaceProvider>
     </SettingsProvider>

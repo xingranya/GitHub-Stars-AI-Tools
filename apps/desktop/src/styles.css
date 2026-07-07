@@ -95,7 +95,6 @@
   --spacing-margin-page: 2rem;
   --spacing-gutter: 1.5rem;
   --spacing-stack-gap: 1rem;
-  --spacing-titlebar: 48px;
 
   /* --- 圆角 --- */
   --radius: 0.5rem;
@@ -197,28 +196,12 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-.app-title-bar {
-  -webkit-app-region: drag;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.7),
-    0 1px 0 rgb(255 255 255 / 0.58),
-    0 18px 36px -30px rgb(31 41 55 / 0.45);
-}
-
-.app-title-bar button {
-  -webkit-app-region: no-drag;
-}
-
 .dark body {
   background-color: #0d0f14;
   background-image:
     radial-gradient(at 0% 0%, rgb(37 99 235 / 0.12) 0px, transparent 42%),
     radial-gradient(at 100% 0%, rgb(148 55 0 / 0.08) 0px, transparent 36%),
     linear-gradient(180deg, rgb(23 26 33 / 0.98), rgb(13 15 20 / 1));
-}
-
-.dark .app-title-bar {
-  box-shadow: 0 1px 0 rgb(255 255 255 / 0.06), 0 12px 32px -24px rgb(0 0 0 / 0.75);
 }
 
 button,

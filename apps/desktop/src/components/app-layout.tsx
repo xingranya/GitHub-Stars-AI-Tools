@@ -29,6 +29,7 @@ const NAV_ITEMS: { key: Page; icon: string; label: string }[] = [
 ];
 export function AppLayout(props: AppLayoutProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -55,14 +56,19 @@ export function AppLayout(props: AppLayoutProps) {
   return (
     <div className="app-layout flex h-full min-w-0 overflow-hidden">
       {/* 侧边导航栏 */}
-      <aside className="glass-sidebar fixed bottom-0 left-0 top-titlebar z-40 hidden w-[clamp(250px,21vw,300px)] flex-col gap-stack-gap p-4 lg:flex">
+      <aside
+        className={`glass-sidebar fixed bottom-0 left-0 top-0 z-40 hidden flex-col gap-stack-gap p-4 transition-[width] duration-200 lg:flex ${
+          isSidebarCollapsed ? 'w-[72px]' : 'w-[clamp(250px,21vw,300px)]'
+        }`}
+      >
         {/* 标题区 */}
-        <div className="flex items-center gap-3 px-2 py-4 mb-2">
+        <div className={`mb-2 flex items-center gap-3 py-4 ${isSidebarCollapsed ? 'justify-center px-0' : 'px-2'}`}>
           <img
             src="/icon.png"
             alt="GitHub-Stars-AI-Tools"
-            className="h-11 w-11 shrink-0 rounded-[14px] border border-card-border bg-surface-container-lowest object-contain shadow-sm"
+            className={`${isSidebarCollapsed ? 'h-10 w-10' : 'h-11 w-11'} shrink-0 rounded-[14px] border border-card-border bg-surface-container-lowest object-contain shadow-sm`}
           />
+          {!isSidebarCollapsed && (
           <div className="min-w-0 leading-tight">
             <h1 className="truncate text-[17px] font-semibold leading-5 text-on-surface" title="GitHub-Stars-AI-Tools">
               GitHub Stars AI
@@ -71,7 +77,19 @@ export function AppLayout(props: AppLayoutProps) {
               GSAT 本地知识库
             </p>
           </div>
+          )}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setIsSidebarCollapsed((current) => !current)}
+          className="flex h-10 items-center justify-center gap-2 rounded-lg border border-outline-variant/30 bg-surface text-sm text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
+          title={isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+          aria-label={isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+        >
+          <Icon name={isSidebarCollapsed ? 'left_panel_open' : 'left_panel_close'} size={20} />
+          {!isSidebarCollapsed && <span>收起侧栏</span>}
+        </button>
 
         {/* 导航标签 */}
         <nav className="flex-1 flex flex-col gap-1">
@@ -79,7 +97,10 @@ export function AppLayout(props: AppLayoutProps) {
             <button
               key={item.key}
               onClick={() => props.onNavigate(item.key)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 active:scale-[0.98] group ${
+              title={item.label}
+              className={`flex items-center rounded-lg py-2.5 transition-all duration-200 active:scale-[0.98] group ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } ${
                 props.currentPage === item.key
                   ? 'bg-primary/10 text-primary font-semibold'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low hover:scale-[1.02] hover:brightness-110'
@@ -91,12 +112,12 @@ export function AppLayout(props: AppLayoutProps) {
                 fill={props.currentPage === item.key}
                 className="group-hover:scale-110 transition-transform"
               />
-              <span className="font-body-md text-body-md">{item.label}</span>
+              {!isSidebarCollapsed && <span className="font-body-md text-body-md">{item.label}</span>}
             </button>
           ))}
         </nav>
 
-        {props.taskProgress && (
+        {props.taskProgress && !isSidebarCollapsed && (
           <TaskProgressCard
             progress={props.taskProgress}
             onRetry={props.onRetryTask}
@@ -110,41 +131,53 @@ export function AppLayout(props: AppLayoutProps) {
           onClick={() => (props.user ? props.onSyncStars() : props.onNavigate('settings'))}
           disabled={props.isSyncing}
           title={props.user ? '同步 GitHub Stars' : '请先连接 GitHub 账号'}
-          className="interactive-btn mb-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2563eb] py-2.5 font-body-md text-body-md font-semibold text-white shadow-[0_10px_22px_-14px_rgba(37,99,235,0.95)] hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
+          className={`interactive-btn mb-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#2563eb] font-body-md text-body-md font-semibold text-white shadow-[0_10px_22px_-14px_rgba(37,99,235,0.95)] hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60 ${
+            isSidebarCollapsed ? 'h-10 px-0' : 'py-2.5'
+          }`}
         >
           <Icon name={props.isSyncing ? 'progress_activity' : 'sync'} size={18} className={`text-white ${props.isSyncing ? 'animate-spin' : ''}`} />
-          {props.isSyncing ? '同步中...' : props.user ? '同步数据' : '连接 GitHub'}
+          {!isSidebarCollapsed && (props.isSyncing ? '同步中...' : props.user ? '同步数据' : '连接 GitHub')}
         </button>
 
         {/* 底部操作区 */}
         <div className="flex flex-col gap-1 pt-4 border-t border-card-border">
           <button
             onClick={() => props.onNavigate('settings')}
-            className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm ${
+            title="设置"
+            className={`flex items-center rounded-lg py-2 text-sm transition-colors ${
+              isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } ${
               props.currentPage === 'settings'
                 ? 'bg-primary/10 text-primary font-semibold'
                 : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low'
             }`}
           >
             <Icon name="settings" size={20} />
-            <span className="font-body-md text-body-md">设置</span>
+            {!isSidebarCollapsed && <span className="font-body-md text-body-md">设置</span>}
           </button>
           <button
             onClick={() => props.onNavigate('profile')}
-            className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm ${
+            title="个人主页"
+            className={`flex items-center rounded-lg py-2 text-sm transition-colors ${
+              isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } ${
               props.currentPage === 'profile'
                 ? 'bg-primary/10 text-primary font-semibold'
                 : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low'
             }`}
           >
             <Icon name="person" size={20} />
-            <span className="font-body-md text-body-md">个人主页</span>
+            {!isSidebarCollapsed && <span className="font-body-md text-body-md">个人主页</span>}
           </button>
         </div>
       </aside>
 
       {/* 主内容区域 */}
-      <div className="flex h-full min-w-0 flex-1 flex-col lg:ml-[clamp(250px,21vw,300px)]">
+      <div
+        className={`flex h-full min-w-0 flex-1 flex-col transition-[margin-left] duration-200 ${
+          isSidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-[clamp(250px,21vw,300px)]'
+        }`}
+      >
         {/* 顶部导航栏 */}
         <header className="glass-topbar sticky top-0 z-30 flex min-h-16 w-full flex-wrap items-center justify-between gap-3 px-3 py-2 sm:px-4 lg:flex-nowrap lg:px-gutter">
           <div className="flex min-w-0 items-center gap-2 lg:hidden">
