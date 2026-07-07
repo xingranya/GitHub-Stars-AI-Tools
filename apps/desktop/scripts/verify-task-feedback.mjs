@@ -160,8 +160,8 @@ assert.match(
 );
 assert.match(
   tauriLib,
-  /"generate-ai-tag-network"[\s\S]*?"analyze"[\s\S]*?batch_index \+ 1[\s\S]*?batch_total/,
-  'AI 标签网络分批生成必须从当前批次 1/N 开始显示进度',
+  /"generate-ai-tag-network"[\s\S]*?"analyze"[\s\S]*?batch_index,\s*[\s\S]*?batch_total/,
+  'AI 标签网络分批生成必须按已完成批次数显示真实进度，不能在批次开始时提前增加百分比',
 );
 assert.match(
   tauriLib,

@@ -16,6 +16,15 @@ try {
     stdio: 'inherit',
   });
 } finally {
-  rmSync(desktopDist, { recursive: true, force: true });
-  rmSync(tauriTarget, { recursive: true, force: true });
+  removeDirectoryWithRetry(desktopDist);
+  removeDirectoryWithRetry(tauriTarget);
+}
+
+function removeDirectoryWithRetry(directory) {
+  rmSync(directory, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 250,
+  });
 }
