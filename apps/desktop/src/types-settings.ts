@@ -3,6 +3,7 @@ export type AppSettings = {
   sync: SyncSettings;
   ai: AISettings;
   general: GeneralSettings;
+  runtime: RuntimeSettings;
 };
 
 export type ThemeSettings = {
@@ -29,6 +30,17 @@ export type GeneralSettings = {
   showWelcomeOnStartup: boolean;
 };
 
+export type RuntimeSelfCheckRecord = {
+  completedAt: string;
+  passed: number;
+  failed: number;
+  skipped: number;
+};
+
+export type RuntimeSettings = {
+  lastSelfCheckRecord: RuntimeSelfCheckRecord | null;
+};
+
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: {
     mode: 'system',
@@ -44,11 +56,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     provider: 'none',
     baseUrl: '',
     apiKey: '',
-    model: 'gpt-4o-mini',
+    model: 'gpt-5.5',
     enableAutoSummary: false,
   },
   general: {
     showWelcomeOnStartup: true,
+  },
+  runtime: {
+    lastSelfCheckRecord: null,
   },
 };
 

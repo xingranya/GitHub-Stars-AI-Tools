@@ -95,6 +95,7 @@
   --spacing-margin-page: 2rem;
   --spacing-gutter: 1.5rem;
   --spacing-stack-gap: 1rem;
+  --spacing-titlebar: 48px;
 
   /* --- 圆角 --- */
   --radius: 0.5rem;
@@ -183,6 +184,7 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  overflow: hidden;
   font-family: var(--font-sans);
   color: var(--color-on-surface);
   background-color: #ffffff;
@@ -195,10 +197,28 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+.app-title-bar {
+  -webkit-app-region: drag;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.7),
+    0 1px 0 rgb(255 255 255 / 0.58),
+    0 18px 36px -30px rgb(31 41 55 / 0.45);
+}
+
+.app-title-bar button {
+  -webkit-app-region: no-drag;
+}
+
 .dark body {
   background-color: #0d0f14;
   background-image:
+    radial-gradient(at 0% 0%, rgb(37 99 235 / 0.12) 0px, transparent 42%),
+    radial-gradient(at 100% 0%, rgb(148 55 0 / 0.08) 0px, transparent 36%),
     linear-gradient(180deg, rgb(23 26 33 / 0.98), rgb(13 15 20 / 1));
+}
+
+.dark .app-title-bar {
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.06), 0 12px 32px -24px rgb(0 0 0 / 0.75);
 }
 
 button,
@@ -233,6 +253,14 @@ textarea {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.2);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.14);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.22);
 }
 
 /* --- 无滚动条工具类 --- */
@@ -285,6 +313,7 @@ textarea {
 .readme-rendered {
   font-size: 14px;
   line-height: 1.72;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
@@ -373,6 +402,7 @@ textarea {
   border-radius: 0.5rem;
   background: var(--color-surface-container-low);
   padding: 0.9rem 1rem;
+  color: var(--color-on-surface);
 }
 
 .readme-rendered pre code {
@@ -388,6 +418,7 @@ textarea {
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
+  border-radius: 0.5rem;
 }
 
 .readme-rendered th,
@@ -401,10 +432,37 @@ textarea {
   font-weight: 700;
 }
 
+.dark .readme-rendered {
+  background: rgb(11 13 17 / 0.72);
+  border-color: rgb(255 255 255 / 0.1);
+}
+
+.dark .readme-rendered code {
+  background: var(--color-surface-container-highest);
+  color: var(--color-on-surface);
+}
+
+.dark .readme-rendered pre {
+  background: #0b0d11;
+}
+
 .readme-rendered blockquote {
   border-left: 3px solid var(--color-primary);
   color: var(--color-on-surface-variant);
   padding-left: 0.9rem;
+}
+
+@keyframes taskProgressIndeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.task-progress-indeterminate {
+  animation: taskProgressIndeterminate 1.25s ease-in-out infinite;
 }
 
 /* ===========================================================================
@@ -422,6 +480,92 @@ textarea {
 }
 .animate-fade-in-up {
   animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ===========================================================================
+ * 欢迎页扁平化样式
+ * =========================================================================*/
+.welcome-surface {
+  background: var(--color-background);
+}
+
+.welcome-surface::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--color-outline-variant) 48%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--color-outline-variant) 48%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(to bottom, black, transparent 75%);
+}
+
+.welcome-card,
+.welcome-progress-panel {
+  animation: welcomePanelIn 320ms var(--ease-out) both;
+  box-shadow: none;
+}
+
+.welcome-step-panel {
+  animation: welcomeStepIn 360ms var(--ease-out) both;
+}
+
+.welcome-icon-tile {
+  animation: welcomeIconIn 260ms var(--ease-out) both;
+}
+
+.welcome-message {
+  animation: welcomeMessageIn 240ms var(--ease-out) both;
+}
+
+.dark .welcome-surface::before {
+  opacity: 0.1;
+}
+
+@keyframes welcomePanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes welcomeStepIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes welcomeIconIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes welcomeMessageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
