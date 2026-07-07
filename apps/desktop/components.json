@@ -19,5 +19,5 @@
     "creative-tim": "@/components/creative-tim"
   },
   "registry": "https://creative-tim.com/ui",
-  "$comment": "For private components, configure registry with headers. Example: \"registry\": { \"url\": \"https://creative-tim.com/ui\", \"headers\": { \"Authorization\": \"Bearer ${CREATIVE_TIM_UI_API_KEY}\" } }"
+  "$comment": "客户端正式配置不依赖环境变量；GitHub Token 和 AI API Key 都在应用内设置并保存到系统凭据管理器。"
 }

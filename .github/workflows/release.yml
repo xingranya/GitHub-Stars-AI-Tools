@@ -1,0 +1,262 @@
+name: Release Desktop Apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，例如 0.1.0 或 v0.1.0"
+        required: true
+        type: string
+      changelog:
+        description: "更新日志，会写入 GitHub Release"
+        required: true
+        type: string
+      release_draft:
+        description: "是否创建草稿 Release"
+        required: true
+        default: false
+        type: boolean
+      prerelease:
+        description: "是否标记为预发布"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release metadata
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+    steps:
+      - name: Normalize version
+        id: meta
+        shell: bash
+        run: |
+          raw_version="${{ github.event.inputs.version }}"
+          version="${raw_version#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "版本号必须类似 0.1.0、v0.1.0 或 0.1.0-beta.1" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v$version" >> "$GITHUB_OUTPUT"
+          echo "release_name=GitHub-Stars-AI-Tools v$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS Apple Silicon
+            os: macos-latest
+            args: --target aarch64-apple-darwin --bundles dmg
+            rust_targets: aarch64-apple-darwin
+          - platform: macOS Intel
+            os: macos-latest
+            args: --target x86_64-apple-darwin --bundles dmg
+            rust_targets: x86_64-apple-darwin
+          - platform: Windows
+            os: windows-latest
+            args: ""
+            rust_targets: ""
+          - platform: Linux
+            os: ubuntu-22.04
+            args: ""
+            rust_targets: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf \
+            rpm \
+            xdg-utils
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust target
+        if: matrix.rust_targets != ''
+        run: rustup target add ${{ matrix.rust_targets }}
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release configuration
+        run: pnpm verify:tauri-release-config
+
+      - name: Sync release version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+
+          const version = process.env.RELEASE_VERSION;
+          if (!version) {
+            throw new Error('缺少 RELEASE_VERSION');
+          }
+
+          for (const file of ['package.json', 'apps/desktop/package.json', 'apps/desktop/src-tauri/tauri.conf.json']) {
+            const data = JSON.parse(readFileSync(file, 'utf8'));
+            data.version = version;
+            writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
+          }
+
+          const cargoFile = 'apps/desktop/src-tauri/Cargo.toml';
+          const cargo = readFileSync(cargoFile, 'utf8');
+          writeFileSync(cargoFile, cargo.replace(/^version = ".*"$/m, `version = "${version}"`));
+          NODE
+
+      - name: Refresh Cargo lockfile
+        run: cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --format-version 1 > /dev/null
+
+      - name: Verify synced release version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const expectedVersion = process.env.RELEASE_VERSION;
+          if (!expectedVersion) {
+            throw new Error('缺少 RELEASE_VERSION');
+          }
+
+          const jsonFiles = [
+            'package.json',
+            'apps/desktop/package.json',
+            'apps/desktop/src-tauri/tauri.conf.json',
+          ];
+          for (const file of jsonFiles) {
+            const actualVersion = JSON.parse(readFileSync(file, 'utf8')).version;
+            if (actualVersion !== expectedVersion) {
+              throw new Error(`${file} 版本号为 ${actualVersion}，预期为 ${expectedVersion}`);
+            }
+          }
+
+          const cargo = readFileSync('apps/desktop/src-tauri/Cargo.toml', 'utf8');
+          const cargoVersion = cargo.match(/^version = "([^"]+)"$/m)?.[1];
+          if (cargoVersion !== expectedVersion) {
+            throw new Error(`Cargo.toml 版本号为 ${cargoVersion ?? '空'}，预期为 ${expectedVersion}`);
+          }
+
+          const cargoLock = readFileSync('apps/desktop/src-tauri/Cargo.lock', 'utf8');
+          const localPackage = cargoLock.match(/\[\[package\]\]\nname = "gsat-desktop"\nversion = "([^"]+)"/)?.[1];
+          if (localPackage !== expectedVersion) {
+            throw new Error(`Cargo.lock 中 gsat-desktop 版本号为 ${localPackage ?? '空'}，预期为 ${expectedVersion}`);
+          }
+          NODE
+
+      - name: Run MVP verification
+        run: pnpm verify:mvp
+
+      - name: Build shared packages
+        run: pnpm build:packages
+
+      - name: Import Windows signing certificate
+        id: windows-signing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)) {
+            Write-Host "WINDOWS_CERTIFICATE 未配置，跳过 Windows 代码签名。"
+            "tauri_config_arg=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            throw "已配置 WINDOWS_CERTIFICATE，但缺少 WINDOWS_CERTIFICATE_PASSWORD。"
+          }
+
+          New-Item -ItemType Directory -Force certificate | Out-Null
+          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
+          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
+          Remove-Item certificate/tempCert.txt
+
+          $password = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+          $certificate = Import-PfxCertificate `
+            -FilePath certificate/certificate.pfx `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -Password $password
+
+          if (-not $certificate -or [string]::IsNullOrWhiteSpace($certificate.Thumbprint)) {
+            throw "Windows 签名证书导入失败，未读取到证书指纹。"
+          }
+
+          $signingConfig = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $certificate.Thumbprint
+                digestAlgorithm = "sha256"
+                timestampUrl = "http://timestamp.digicert.com"
+              }
+            }
+          } | ConvertTo-Json -Depth 6
+
+          Set-Content -Path apps/desktop/src-tauri/tauri.windows.signing.json -Value $signingConfig
+          "tauri_config_arg=--config src-tauri/tauri.windows.signing.json" >> $env:GITHUB_OUTPUT
+
+      - name: Build and publish desktop installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ needs.prepare.outputs.tag_name }}
+          releaseName: ${{ needs.prepare.outputs.release_name }}
+          releaseBody: ${{ github.event.inputs.changelog }}
+          releaseDraft: ${{ github.event.inputs.release_draft }}
+          prerelease: ${{ github.event.inputs.prerelease }}
+          uploadPlainBinary: false
+          args: ${{ matrix.args }} ${{ steps.windows-signing.outputs.tauri_config_arg }}
