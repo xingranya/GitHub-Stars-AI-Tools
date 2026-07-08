@@ -36,6 +36,7 @@ commands.allow = [
   "get_profile_stats",
   "generate_repository_ai_document",
   "batch_generate_repository_ai_documents",
+  "explain_ai_search_topic",
   "search_repositories",
   "recommend_github_repositories",
   "list_github_recommendation_candidates",

@@ -17,7 +17,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const cleanup = applyThemeSettings(settings.settings);
     return cleanup;
-  }, [settings.settings.theme]);
+  }, [
+    settings.settings.theme.brandColor,
+    settings.settings.theme.colorPreset,
+    settings.settings.theme.fontSize,
+    settings.settings.theme.mode,
+  ]);
 
   return <SettingsContext.Provider value={settings}>{children}</SettingsContext.Provider>;
 }
@@ -53,11 +58,17 @@ function applyThemeSettings(settings: AppSettings) {
   root.style.setProperty('--color-accent-foreground', brandColor);
   root.style.setProperty('--color-primary-fixed', colorWithAlpha(brandColor, 0.16));
   root.style.setProperty('--color-on-primary-fixed-variant', brandColor);
+  root.style.fontSize = `${16 * fontScale}px`;
   root.style.setProperty('--text-body-md', `${14 * fontScale}px`);
+  root.style.setProperty('--text-body-md--line-height', `${20 * fontScale}px`);
   root.style.setProperty('--text-body-lg', `${16 * fontScale}px`);
+  root.style.setProperty('--text-body-lg--line-height', `${24 * fontScale}px`);
   root.style.setProperty('--text-headline-md', `${24 * fontScale}px`);
+  root.style.setProperty('--text-headline-md--line-height', `${32 * fontScale}px`);
   root.style.setProperty('--text-headline-lg', `${30 * fontScale}px`);
+  root.style.setProperty('--text-headline-lg--line-height', `${38 * fontScale}px`);
   root.style.setProperty('--text-label-sm', `${12 * fontScale}px`);
+  root.style.setProperty('--text-label-sm--line-height', `${16 * fontScale}px`);
   applyColorMode();
 
   if (settings.theme.mode !== 'system') {
