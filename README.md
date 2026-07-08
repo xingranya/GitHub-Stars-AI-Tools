@@ -54,6 +54,14 @@
 4. 点击“抓取 README”，缓存仓库详情。
 5. 可选：在设置页配置 AI 服务，生成摘要、标签网络、AI 搜索解释和相似项目推荐。
 
+### macOS 首次打开提示
+
+当前 macOS 安装包暂未使用 Apple Developer ID 签名，首次打开时可能提示“移动到废纸篓”。这是系统 Gatekeeper 对未签名应用的拦截，不代表应用损坏。安装到“应用程序”后，在终端运行下面这一行即可正常打开：
+
+```bash
+sudo xattr -r -d com.apple.quarantine "/Applications/GitHub-Stars-AI-Tools.app"
+```
+
 ## AI 服务
 
 GSAT 支持 OpenAI、Anthropic 和 OpenAI 兼容接口。你可以直接选择常用提供商预设，也可以手动填写自定义 Base URL 和模型 ID。
