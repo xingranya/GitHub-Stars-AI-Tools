@@ -15,9 +15,9 @@
   - Files: `packages/**`、`tsconfig.base.json`、`tsconfig.packages.json`、`package.json`、`pnpm-lock.yaml`
 
 - [x] Task 1.3: 建立本地 SQLite 初始化机制
-  - Status: 已完成。核心表、schema 记录表、FTS 表、完整初始化 SQL 和幂等验证脚本均已建立；本机测试期旧 SQLite 不做迁移，结构不兼容时删除并重建。
+  - Status: 已完成。核心表、schema 记录表、FTS 表和完整初始化 SQL 均已建立；本机测试期旧 SQLite 不做迁移，结构不兼容时删除并重建。
   - Acceptance: 核心表可创建，schema 初始化可重复执行。
-  - Verify: `pnpm --filter @gsat/storage verify:migrations` 与 `pnpm build` 已通过。
+  - Verify: `pnpm build` 已通过。
   - Files: `packages/storage/**`
 
 ## Phase 2: GitHub Sync
@@ -57,7 +57,7 @@
 - [x] Task 3.3: 关键词搜索与筛选
   - Status: 已完成。本地仓库查询已支持关键词、language、tag 组合筛选；关键词覆盖仓库名称、描述、语言、Topics 和用户笔记；前端 Star 工作台已接入搜索框、语言筛选、标签筛选和重置入口。
   - Acceptance: 支持关键词、language、tag 组合筛选。
-  - Verify: `pnpm verify:search`、`pnpm verify:view-ai-ui`、`pnpm verify:mvp`。
+  - Verify: `pnpm build` 与 `cargo check`。
   - Files: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
 ## Phase 4: AI Knowledge MVP
@@ -65,19 +65,19 @@
 - [x] Task 4.1: AI 服务适配层
   - Status: 已完成。领域层补齐 `AiRepositoryDocument.readmeZh`；`ai` 包提供 Provider 元信息、能力声明、摘要、翻译、查询理解标准接口，并保留可选 Embedding 边界但默认不启用；桌面后端已接入 OpenAI、OpenAI 兼容接口与 Anthropic，支持用户在应用内填写请求地址、API Key 和模型 ID。
   - Acceptance: 业务层只依赖标准接口，桌面运行时使用真实远程 AI 协议，离线测试使用请求桩验证协议封装。
-  - Verify: `pnpm verify:ai`、`pnpm verify:settings-flow`、`pnpm verify:mvp`。
+  - Verify: `pnpm build` 与 `cargo check`。
   - Files: `packages/domain/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts`
 
 - [x] Task 4.2: README 中文摘要
   - Status: 已完成。`StoragePort` 已补齐 AI 文档读取与 README AI 候选项接口；桌面后端支持单仓与批量摘要，按 README `contentHash` 跳过未变化内容；AI 结果包含中文摘要、README 中文梳理、关键词、推荐标签与 token 用量。
   - Acceptance: 摘要、关键词、推荐标签可生成，hash 未变不重复生成。
-  - Verify: `pnpm verify:ai`、`pnpm verify:view-ai-ui`、`pnpm verify:task-feedback`。
+  - Verify: `pnpm build` 与 `cargo check`。
   - Files: `packages/storage/src/index.ts`、`packages/ai/src/index.ts`、`packages/worker/src/index.ts`
 
 - [x] Task 4.3: 项目详情页中文展示
   - Status: 已完成。Tauri 后端新增仓库详情查询，按账号边界读取 README 缓存与 AI 派生文档；前端详情区展示 AI 中文摘要、关键词、推荐标签、README 原文、标签、阅读状态和用户笔记。AI 派生数据保持只读展示，不写入用户注解层。
   - Acceptance: 详情页展示中文摘要、README 原文、标签、笔记。
-  - Verify: `pnpm verify:view-ai-ui`、`pnpm verify:task-feedback`、`pnpm verify:mvp`。
+  - Verify: `pnpm build` 与 `cargo check`。
   - Files: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
 ## Phase 5: Natural Language Search
@@ -97,7 +97,7 @@
 - [x] Task 5.3: 检索结果解释
   - Status: 已完成。领域层 `SearchResult` 已扩展中文解释和引用片段；搜索层新增解释生成器，可从仓库事实、AI 文档、README 和用户笔记生成中文匹配理由；自然语言搜索会携带最近对话上下文并复用同一结果解释结构。
   - Acceptance: 每个结果都有中文匹配理由和引用片段。
-  - Verify: `pnpm verify:search`、`pnpm verify:ai-search-flow`、`pnpm verify:mvp`。
+  - Verify: `pnpm build` 与 `cargo check`。
   - Files: `packages/domain/src/index.ts`、`packages/search/src/index.ts`、`apps/desktop/src/App.tsx`、`apps/desktop/src/styles.css`
 
 ## Phase 6: Long-term Usage
@@ -105,7 +105,7 @@
 - [x] Task 6.1: 增量同步与全量重扫
   - Status: 已完成。同步命令现在以 GitHub 全量 starred 列表作为事实来源执行本地对账：新 Star 幂等写入，已有 Star 更新事实字段，未出现在本次 GitHub 返回中的 active 仓库标记为 removed；标签、笔记、README 和 AI 派生数据不删除、不覆盖。同步结果返回 active、新增、更新、移除统计并在前端展示。
   - Acceptance: 新 Star 加入，unstar 标记 removed，不删除注解。
-  - Verify: `pnpm verify:sync-resilience`、`pnpm verify:github`、`pnpm verify:mvp`；真实新增与取消 Star 对账需连接 GitHub 后重复执行同步验证。
+  - Verify: `pnpm build` 与 `cargo check`；真实新增与取消 Star 对账需连接 GitHub 后重复执行同步验证。
   - Files: `apps/desktop/src-tauri/src/storage.rs`、`apps/desktop/src-tauri/src/lib.rs`、`apps/desktop/src/App.tsx`
 
 - [x] Task 6.2: Gist 注解导入导出
@@ -117,5 +117,5 @@
 - [x] Task 6.3: 成本与任务监控
   - Status: 已完成。AI 摘要记录输入/输出 token 用量；全局任务卡展示阶段、进度、当前仓库和失败原因；同步、README、AI 摘要、Gist 导入导出失败后均有重试入口；发布包真实链路自检会持久化非敏感检查记录。
   - Acceptance: 展示 AI 用量、失败任务、重试入口，并能区分运行中、完成、失败和部分失败。
-  - Verify: `pnpm verify:task-feedback`、`pnpm verify:settings-flow`、`pnpm verify:acceptance`。
+  - Verify: `pnpm build` 与 `cargo check`。
   - Files: `apps/desktop/src/**`、`apps/desktop/src-tauri/src/**`、`scripts/**`
