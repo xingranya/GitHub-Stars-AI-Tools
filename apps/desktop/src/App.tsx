@@ -1,9 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { AppLayout } from '@/components/app-layout';
+import { Icon } from '@/components/ui/icon';
 import { WelcomeFlow } from '@/components/welcome-flow';
 import { WorkspaceProvider, useWorkspace } from '@/providers/workspace-provider';
 import { SettingsProvider, useAppSettings } from '@/providers/settings-provider';
+import { AppUpdateProvider, useAppUpdate } from '@/providers/app-update-provider';
 import { shouldFlushAiApiKey } from '@/lib/ai-config';
 import type { RepositoryListItem } from '@/types';
 
@@ -27,9 +29,11 @@ type RepositoryNavigationState = {
 function AppContent() {
   const workspace = useWorkspace();
   const settingsHook = useAppSettings();
+  const appUpdate = useAppUpdate();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [showWelcome, setShowWelcome] = useState(false);
   const [hasDismissedWelcome, setHasDismissedWelcome] = useState(false);
+  const [hasDismissedUpdateNotice, setHasDismissedUpdateNotice] = useState(false);
   const [repositoryNavigation, setRepositoryNavigation] = useState<RepositoryNavigationState>({
     query: '',
     language: '',
@@ -296,25 +300,78 @@ function AppContent() {
   }
 
   return (
-    <AppLayout
-      currentPage={currentPage}
-      onNavigate={setCurrentPage}
-      user={workspace.authState.user}
-      onSyncStars={workspace.handleSyncStars}
-      isSyncing={workspace.isSyncingStars}
-      syncSummary={workspace.syncSummary}
-      onGlobalSearch={handleGlobalSearch}
-      taskProgress={workspace.taskProgress}
-      onRetryTask={failedTaskRetry?.onRetry ?? null}
-      retryTaskLabel={failedTaskRetry?.label ?? null}
-      isRetryingTask={failedTaskRetry?.isRetrying ?? false}
-      statusMessage={workspace.authMessage}
-      errorMessage={workspace.error ?? settingsHook.settingsError}
-    >
-      <Suspense fallback={<PageLoadingFallback />}>
-        {renderPage()}
-      </Suspense>
-    </AppLayout>
+    <>
+      <AppLayout
+        currentPage={currentPage}
+        onNavigate={setCurrentPage}
+        user={workspace.authState.user}
+        onSyncStars={workspace.handleSyncStars}
+        isSyncing={workspace.isSyncingStars}
+        syncSummary={workspace.syncSummary}
+        onGlobalSearch={handleGlobalSearch}
+        taskProgress={workspace.taskProgress}
+        onRetryTask={failedTaskRetry?.onRetry ?? null}
+        retryTaskLabel={failedTaskRetry?.label ?? null}
+        isRetryingTask={failedTaskRetry?.isRetrying ?? false}
+        statusMessage={workspace.authMessage}
+        errorMessage={workspace.error ?? settingsHook.settingsError}
+      >
+        <Suspense fallback={<PageLoadingFallback />}>
+          {renderPage()}
+        </Suspense>
+      </AppLayout>
+      {appUpdate.status === 'available' && appUpdate.availableVersion && !hasDismissedUpdateNotice && (
+        <StartupUpdateNotice
+          version={appUpdate.availableVersion}
+          onOpenSettings={() => setCurrentPage('settings')}
+          onDismiss={() => setHasDismissedUpdateNotice(true)}
+        />
+      )}
+    </>
+  );
+}
+
+function StartupUpdateNotice(props: { version: string; onOpenSettings: () => void; onDismiss: () => void }) {
+  return (
+    <div className="fixed bottom-4 right-4 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-xl border border-primary/20 bg-surface p-4 shadow-xl shadow-black/15 backdrop-blur-md">
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon name="system_update_alt" size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-body-md text-sm font-semibold text-on-surface">发现新版本 {props.version}</p>
+          <p className="mt-1 font-body-md text-xs leading-relaxed text-on-surface-variant">
+            可在设置中查看更新说明并手动安装，当前操作不会被打断。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={props.onOpenSettings}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 font-body-md text-xs font-medium text-white transition-colors hover:brightness-110"
+            >
+              <Icon name="settings" size={14} />
+              查看更新
+            </button>
+            <button
+              type="button"
+              onClick={props.onDismiss}
+              className="rounded-lg border border-card-border bg-surface-container-low px-3 py-1.5 font-body-md text-xs text-on-surface transition-colors hover:bg-surface-container-high"
+            >
+              稍后
+            </button>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={props.onDismiss}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-on-surface"
+          title="关闭更新提示"
+          aria-label="关闭更新提示"
+        >
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -526,11 +583,13 @@ function getFailureRepositoryIds(failures: { repositoryId: string }[] | undefine
 export function App() {
   return (
     <SettingsProvider>
-      <WorkspaceProvider>
-        <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-background">
-          <AppContent />
-        </div>
-      </WorkspaceProvider>
+      <AppUpdateProvider>
+        <WorkspaceProvider>
+          <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-background">
+            <AppContent />
+          </div>
+        </WorkspaceProvider>
+      </AppUpdateProvider>
     </SettingsProvider>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useWorkspace } from '@/providers/workspace-provider';
 import { useAppSettings } from '@/providers/settings-provider';
+import { useAppUpdate, type AppUpdateContextValue } from '@/providers/app-update-provider';
 import { Icon } from '@/components/ui/icon';
 import {
   getAiConfigMessage,
@@ -48,6 +49,7 @@ type AiModelOption = {
 export function SettingsPage() {
   const workspace = useWorkspace();
   const settingsHook = useAppSettings();
+  const appUpdate = useAppUpdate();
   const [activeTab, setActiveTab] = useState<SettingsTab>('github');
 
   const tabs: { key: SettingsTab; icon: string; label: string; shortLabel: string }[] = [
@@ -102,7 +104,9 @@ export function SettingsPage() {
           />
         )}
         {activeTab === 'ai' && <AISettings settingsHook={settingsHook} />}
-        {activeTab === 'general' && <GeneralSettings settingsHook={settingsHook} workspace={workspace} />}
+        {activeTab === 'general' && (
+          <GeneralSettings settingsHook={settingsHook} workspace={workspace} appUpdate={appUpdate} />
+        )}
         {activeTab === 'backup' && <BackupSettings workspace={workspace} />}
       </div>
     </div>
@@ -1300,9 +1304,11 @@ function getAiKeySaveMessage(status: ReturnType<typeof useAppSettings>['aiKeySav
 function GeneralSettings({
   settingsHook,
   workspace,
+  appUpdate,
 }: {
   settingsHook: ReturnType<typeof useAppSettings>;
   workspace: ReturnType<typeof useWorkspace>;
+  appUpdate: AppUpdateContextValue;
 }) {
   const [isClearingAllLocalData, setIsClearingAllLocalData] = useState(false);
   const [isClearDataConfirmOpen, setIsClearDataConfirmOpen] = useState(false);
@@ -1442,6 +1448,7 @@ function GeneralSettings({
             </div>
           </div>
         )}
+        <AppUpdateSettings appUpdate={appUpdate} />
         <div className="border-t border-card-border pt-5">
           <div className="mb-5 rounded-xl border border-error/25 bg-error/10 p-4">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -1590,6 +1597,169 @@ function GeneralSettings({
       </div>
     </section>
   );
+}
+
+function AppUpdateSettings({ appUpdate }: { appUpdate: AppUpdateContextValue }) {
+  const isChecking = appUpdate.status === 'checking';
+  const isDownloading = appUpdate.status === 'downloading';
+  const canInstall = appUpdate.status === 'available' && Boolean(appUpdate.availableVersion);
+  const statusMessage = getAppUpdateStatusMessage(appUpdate);
+
+  return (
+    <div className="border-t border-card-border py-5">
+      <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Icon name="system_update_alt" size={20} className="text-primary" />
+              <h4 className="font-body-lg font-semibold text-on-surface">应用更新</h4>
+            </div>
+            <div className="mt-3 grid gap-2 text-sm text-on-surface-variant sm:grid-cols-2">
+              <p>
+                <span className="font-medium text-on-surface">当前版本：</span>
+                {appUpdate.currentVersion || '读取中'}
+              </p>
+              <p>
+                <span className="font-medium text-on-surface">最近检查：</span>
+                {formatUpdateCheckedAt(appUpdate.lastCheckedAt)}
+              </p>
+              {appUpdate.availableVersion && (
+                <p>
+                  <span className="font-medium text-on-surface">可用版本：</span>
+                  {appUpdate.availableVersion}
+                </p>
+              )}
+              {appUpdate.releaseDate && (
+                <p>
+                  <span className="font-medium text-on-surface">发布时间：</span>
+                  {formatUpdateCheckedAt(appUpdate.releaseDate)}
+                </p>
+              )}
+            </div>
+            {statusMessage && (
+              <p
+                className={`mt-3 rounded-lg border px-3 py-2 font-body-md text-sm ${
+                  appUpdate.status === 'error'
+                    ? 'border-error/20 bg-error/10 text-error'
+                    : appUpdate.status === 'available' || appUpdate.status === 'installed'
+                      ? 'border-success/20 bg-success/10 text-success'
+                      : 'border-outline-variant/30 bg-surface text-on-surface-variant'
+                }`}
+              >
+                {statusMessage}
+              </p>
+            )}
+            {appUpdate.releaseBody && (
+              <div className="mt-3 rounded-lg border border-outline-variant/25 bg-surface p-3">
+                <p className="font-body-md text-xs font-medium text-on-surface">更新说明</p>
+                <p className="mt-2 max-h-36 overflow-y-auto whitespace-pre-line font-body-md text-sm leading-relaxed text-on-surface-variant">
+                  {appUpdate.releaseBody}
+                </p>
+              </div>
+            )}
+            {appUpdate.status === 'downloading' && appUpdate.downloadProgress && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between gap-3 text-xs text-on-surface-variant">
+                  <span className="font-medium text-on-surface">下载进度</span>
+                  <span>{appUpdate.downloadProgress.percent}%</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface">
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width]"
+                    style={{ width: `${appUpdate.downloadProgress.percent}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-on-surface-variant">
+                  已下载 {formatBytes(appUpdate.downloadProgress.downloadedBytes)}
+                  {appUpdate.downloadProgress.totalBytes ? ` / ${formatBytes(appUpdate.downloadProgress.totalBytes)}` : ''}
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:min-w-36">
+            <button
+              type="button"
+              onClick={() => void appUpdate.checkForUpdate()}
+              disabled={isChecking || isDownloading}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface px-3 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Icon name="refresh" size={17} className={isChecking ? 'animate-spin' : ''} />
+              {isChecking ? '检查中' : '检查更新'}
+            </button>
+            {canInstall && (
+              <button
+                type="button"
+                onClick={() => void appUpdate.installUpdate()}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110"
+              >
+                <Icon name="download" size={17} />
+                立即安装
+              </button>
+            )}
+            {appUpdate.status === 'installed' && (
+              <button
+                type="button"
+                onClick={() => void appUpdate.relaunchApp()}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110"
+              >
+                <Icon name="restart_alt" size={17} />
+                重启应用
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getAppUpdateStatusMessage(appUpdate: AppUpdateContextValue) {
+  switch (appUpdate.status) {
+    case 'checking':
+      return '正在检查更新...';
+    case 'available':
+      return `发现新版本 ${appUpdate.availableVersion ?? ''}，可查看说明后立即安装。`;
+    case 'not-available':
+      return '已是最新版本。';
+    case 'downloading':
+      return '正在下载并安装更新，请保持应用打开。';
+    case 'installed':
+      return '更新已安装，重启应用后生效。';
+    case 'error':
+      return appUpdate.errorMessage ? `更新检查失败：${appUpdate.errorMessage}` : '更新检查失败，请稍后重试。';
+    case 'idle':
+    default:
+      return '应用会在启动时静默检查更新，也可以在这里手动检查。';
+  }
+}
+
+function formatUpdateCheckedAt(value: string | null) {
+  if (!value) {
+    return '尚未检查';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function normalizeSyncIntervalInput(value: string) {
