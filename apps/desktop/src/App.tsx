@@ -207,6 +207,22 @@ function AppContent() {
     setCurrentPage('repositories');
   }
 
+  async function flushAiApiKeyBeforeBatchTask() {
+    if (shouldFlushAiApiKey(settingsHook.settings.ai)) {
+      await settingsHook.flushAIKey(settingsHook.settings.ai.apiKey);
+    }
+  }
+
+  async function handleQuickBatchGenerateAiDocuments() {
+    await flushAiApiKeyBeforeBatchTask();
+    await workspace.handleBatchGenerateAiDocuments(settingsHook.settings.ai, { onlyMissing: true });
+  }
+
+  async function handleQuickGenerateAiTagNetwork() {
+    await flushAiApiKeyBeforeBatchTask();
+    await workspace.handleGenerateAiTagNetwork(settingsHook.settings.ai);
+  }
+
   const failedTaskRetry = getFailedTaskRetry({
     taskId: workspace.taskProgress?.status === 'failed' || workspace.taskProgress?.status === 'partial'
       ? workspace.taskProgress.taskId
@@ -307,6 +323,14 @@ function AppContent() {
         user={workspace.authState.user}
         onSyncStars={workspace.handleSyncStars}
         isSyncing={workspace.isSyncingStars}
+        onFetchReadmes={() => void workspace.handleFetchReadmes({ onlyMissing: true })}
+        isFetchingReadmes={workspace.isFetchingReadmes}
+        onBatchGenerateAiDocuments={() => void handleQuickBatchGenerateAiDocuments()}
+        isBatchGeneratingAiDocuments={workspace.isBatchGeneratingAiDocuments}
+        onGenerateAiTagNetwork={() => void handleQuickGenerateAiTagNetwork()}
+        isGeneratingTagNetwork={workspace.isGeneratingTagNetwork}
+        onCheckForUpdate={() => void appUpdate.checkForUpdate()}
+        isCheckingUpdate={appUpdate.status === 'checking'}
         syncSummary={workspace.syncSummary}
         onGlobalSearch={handleGlobalSearch}
         taskProgress={workspace.taskProgress}

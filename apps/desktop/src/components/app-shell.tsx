@@ -1,6 +1,7 @@
 import { Database, HardDrive, UserRound, Settings } from 'lucide-react';
 import { PropsWithChildren, ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { BrandIcon } from '@/components/ui/brand-icon';
 import { Button } from '@/components/ui/button';
 import type { BackendStatus, GitHubAuthState, RepositoryStats } from '@/types';
 
@@ -23,11 +24,7 @@ export function AppShell(props: AppShellProps) {
       <header className="sticky top-0 z-40 shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 px-4 py-2 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <img
-              src="/icon.png"
-              alt="GitHub-Stars-AI-Tools"
-              className="size-8 rounded-[10px] border bg-surface-container-lowest object-contain shadow-sm"
-            />
+            <BrandIcon title="GitHub-Stars-AI-Tools" className="size-8 rounded-[10px] shadow-sm" />
             <div className="min-w-0 leading-tight">
               <strong className="block truncate text-sm font-semibold tracking-tight" title="GitHub-Stars-AI-Tools">GitHub Stars AI</strong>
               <span className="text-xs text-muted-foreground">GSAT 本地知识库</span>

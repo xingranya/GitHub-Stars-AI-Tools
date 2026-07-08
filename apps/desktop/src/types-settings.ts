@@ -20,6 +20,19 @@ export type SyncSettings = {
 
 export type AISettings = {
   provider: 'openai' | 'openai-compatible' | 'anthropic' | 'none';
+  providerPreset:
+    | 'openai'
+    | 'anthropic'
+    | 'openrouter'
+    | 'deepseek'
+    | 'moonshot'
+    | 'qwen'
+    | 'zhipu'
+    | 'siliconflow'
+    | 'ollama'
+    | 'lmstudio'
+    | 'custom-openai-compatible'
+    | 'none';
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -54,9 +67,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   ai: {
     provider: 'none',
+    providerPreset: 'none',
     baseUrl: '',
     apiKey: '',
-    model: 'gpt-5.5',
+    model: '',
     enableAutoSummary: false,
   },
   general: {

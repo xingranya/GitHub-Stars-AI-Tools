@@ -48,6 +48,18 @@ export type TaskProgressEvent = {
   repositoryName: string | null;
 };
 
+export type AiStreamEvent = {
+  requestId: string;
+  taskType: 'ai-search' | 'repository-ai-document' | string;
+  stage: string;
+  status: 'started' | 'delta' | 'finished' | 'failed' | 'fallback' | string;
+  delta: string | null;
+  text: string | null;
+  message: string | null;
+  repositoryId: string | null;
+  createdAt: string;
+};
+
 export type BatchAiDocumentSummary = {
   totalCount: number;
   generatedCount: number;
