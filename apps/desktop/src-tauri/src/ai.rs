@@ -84,7 +84,6 @@ pub struct AiSearchPlan {
     pub rationale_zh: String,
 }
 
-#[derive(Deserialize)]
 struct AiJsonDocument {
     summary_zh: Option<String>,
     readme_zh: Option<String>,
@@ -913,8 +912,17 @@ fn build_search_query_prompt(query: &str, context_queries: &[String]) -> String 
 
 fn parse_ai_document(content: &str) -> Result<AiJsonDocument, String> {
     let json_text = extract_json_object(content).unwrap_or_else(|| content.trim().to_owned());
-    let parsed = match serde_json::from_str::<AiJsonDocument>(&json_text) {
-        Ok(parsed) => parsed,
+    let parsed = match serde_json::from_str::<serde_json::Value>(&json_text) {
+        Ok(value) if value.is_object() => value,
+        Ok(_) => {
+            let fallback = normalize_plain_text_summary_fallback(content)?;
+            return Ok(AiJsonDocument {
+                summary_zh: Some(fallback),
+                readme_zh: None,
+                keywords: Some(Vec::new()),
+                suggested_tags: Some(Vec::new()),
+            });
+        }
         Err(_) => {
             let fallback = normalize_plain_text_summary_fallback(content)?;
             return Ok(AiJsonDocument {
@@ -925,15 +933,88 @@ fn parse_ai_document(content: &str) -> Result<AiJsonDocument, String> {
             });
         }
     };
-    let summary = normalize_text(parsed.summary_zh.as_deref())
-        .ok_or_else(|| "AI 摘要缺少 summary_zh 字段".to_owned())?;
+    let summary = json_string_alias(
+        &parsed,
+        &[
+            "summary_zh",
+            "summaryZh",
+            "summary",
+            "summary_cn",
+            "summaryCn",
+            "overview",
+            "description_zh",
+            "descriptionZh",
+            "description",
+            "摘要",
+            "中文摘要",
+            "项目摘要",
+        ],
+    )
+    .ok_or_else(|| "AI 摘要缺少 summary_zh 字段".to_owned())?;
 
     Ok(AiJsonDocument {
         summary_zh: Some(summary),
-        readme_zh: normalize_text(parsed.readme_zh.as_deref()),
-        keywords: Some(normalize_list(parsed.keywords.unwrap_or_default(), 10)),
-        suggested_tags: Some(normalize_list(parsed.suggested_tags.unwrap_or_default(), 8)),
+        readme_zh: json_string_alias(
+            &parsed,
+            &[
+                "readme_zh",
+                "readmeZh",
+                "readme_summary",
+                "readmeSummary",
+                "readme",
+                "details_zh",
+                "detailsZh",
+                "details",
+                "README梳理",
+            ],
+        ),
+        keywords: Some(json_string_list_alias(
+            &parsed,
+            &["keywords", "keyword", "key_words", "keyWords", "关键词"],
+            10,
+        )),
+        suggested_tags: Some(json_string_list_alias(
+            &parsed,
+            &[
+                "suggested_tags",
+                "suggestedTags",
+                "tags",
+                "tag_list",
+                "tagList",
+                "建议标签",
+            ],
+            8,
+        )),
     })
+}
+
+fn json_string_alias(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .filter_map(|key| value.get(*key))
+        .find_map(|field| match field {
+            serde_json::Value::String(text) => normalize_text(Some(text)),
+            _ => None,
+        })
+}
+
+fn json_string_list_alias(value: &serde_json::Value, keys: &[&str], limit: usize) -> Vec<String> {
+    let Some(field) = keys.iter().filter_map(|key| value.get(*key)).next() else {
+        return Vec::new();
+    };
+
+    let items = match field {
+        serde_json::Value::Array(values) => values
+            .iter()
+            .filter_map(|item| item.as_str().and_then(|text| normalize_text(Some(text))))
+            .collect::<Vec<_>>(),
+        serde_json::Value::String(text) => text
+            .split([',', '，', ';', '；', '、', '\n'])
+            .filter_map(|item| normalize_text(Some(item)))
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+
+    normalize_list(items, limit)
 }
 
 fn normalize_plain_text_summary_fallback(content: &str) -> Result<String, String> {
@@ -1610,6 +1691,30 @@ mod tests {
         );
         assert_eq!(parsed.keywords.unwrap(), vec!["rust"]);
         assert_eq!(parsed.suggested_tags.unwrap(), vec!["AI", "知识库"]);
+    }
+
+    #[test]
+    fn parse_ai_document_accepts_common_field_aliases() {
+        let parsed = parse_ai_document(
+            r#"{
+              "summary": "一个用于管理 GitHub Stars 的知识库工具。",
+              "readmeSummary": "支持 README 缓存、搜索和标签整理。",
+              "keywords": "GitHub、Stars, 知识库",
+              "tags": "AI 工具，效率"
+            }"#,
+        )
+        .expect("常见字段别名应能解析");
+
+        assert_eq!(
+            parsed.summary_zh.as_deref(),
+            Some("一个用于管理 GitHub Stars 的知识库工具。")
+        );
+        assert_eq!(
+            parsed.readme_zh.as_deref(),
+            Some("支持 README 缓存、搜索和标签整理。")
+        );
+        assert_eq!(parsed.keywords.unwrap(), vec!["GitHub", "Stars", "知识库"]);
+        assert_eq!(parsed.suggested_tags.unwrap(), vec!["AI 工具", "效率"]);
     }
 
     #[test]
