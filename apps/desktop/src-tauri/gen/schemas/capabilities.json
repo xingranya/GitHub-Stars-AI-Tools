@@ -1,1 +1,1 @@
-{"main-window":{"identifier":"main-window","description":"允许主窗口使用应用核心 IPC、任务进度事件监听、基础窗口能力和 GSAT 本地业务命令。","local":true,"windows":["main"],"permissions":["core:default","allow-gsat-commands"]}}
+{"main-window":{"identifier":"main-window","description":"允许主窗口使用应用核心 IPC、任务进度事件监听、基础窗口能力和 GSAT 本地业务命令。","local":true,"windows":["main"],"permissions":["core:default","updater:default","updater:allow-download-and-install","process:allow-restart","allow-gsat-commands"]}}

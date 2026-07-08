@@ -8,6 +8,9 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const rootPackage = JSON.parse(read('package.json'));
 const desktopPackage = JSON.parse(read('apps/desktop/package.json'));
 const tauriConfig = JSON.parse(read('apps/desktop/src-tauri/tauri.conf.json'));
+const desktopCargo = read('apps/desktop/src-tauri/Cargo.toml');
+const tauriLib = read('apps/desktop/src-tauri/src/lib.rs');
+const desktopCapability = JSON.parse(read('apps/desktop/src-tauri/capabilities/default.json'));
 const tauriMain = read('apps/desktop/src-tauri/src/main.rs');
 const readme = read('README.md');
 const gitignore = read('.gitignore');
@@ -16,8 +19,16 @@ const workflow = read(`.github/workflows/${workflowPath}`);
 
 assert.equal(tauriConfig.bundle?.active, true, 'Tauri bundle.active 必须开启，发布版要生成安装包');
 assert.equal(tauriConfig.bundle?.targets, 'all', 'Tauri bundle.targets 应保持 all，让各平台 runner 生成本平台安装包');
+assert.equal(tauriConfig.bundle?.createUpdaterArtifacts, true, 'Tauri 必须生成 updater artifacts，Release 才能提供应用内更新包');
 assert.equal(tauriConfig.productName, 'GitHub-Stars-AI-Tools', '安装包产品名必须使用正式名称');
 assert.equal(tauriConfig.app?.windows?.[0]?.title, 'GitHub-Stars-AI-Tools', '窗口标题必须使用正式名称');
+assert.equal(
+  tauriConfig.plugins?.updater?.endpoints?.[0],
+  'https://github.com/xingranya/GitHub-Stars-AI-Tools/releases/latest/download/latest.json',
+  'Tauri updater endpoint 必须指向 GitHub Releases 的 latest.json',
+);
+assert.match(tauriConfig.plugins?.updater?.pubkey ?? '', /^dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6[\s\S]+$/, 'Tauri updater 必须内置 CLI 生成的 minisign 公钥内容，不能是文件路径');
+assert.equal(tauriConfig.plugins?.updater?.windows?.installMode, 'passive', 'Windows updater 安装模式必须使用 passive，提供安装进度且无需额外交互');
 assert.match(
   tauriMain,
   /#!\[cfg_attr\(not\(debug_assertions\),\s*windows_subsystem\s*=\s*"windows"\)\]/,
@@ -30,6 +41,15 @@ for (const icon of ['icons/32x32.png', 'icons/128x128.png', 'icons/128x128@2x.pn
 }
 
 assert.equal(desktopPackage.scripts.tauri, 'tauri', 'desktop tauri 脚本必须直连 Tauri CLI');
+assert.match(desktopPackage.dependencies['@tauri-apps/plugin-updater'] ?? '', /^2\./, '桌面前端必须依赖 Tauri v2 updater JS 插件');
+assert.match(desktopPackage.dependencies['@tauri-apps/plugin-process'] ?? '', /^2\./, '桌面前端必须依赖 Tauri v2 process JS 插件，用于更新后重启');
+assert.match(desktopCargo, /tauri-plugin-updater = "2\./, 'Rust 端必须依赖 Tauri v2 updater 插件');
+assert.match(desktopCargo, /tauri-plugin-process = "2\./, 'Rust 端必须依赖 Tauri v2 process 插件');
+assert.match(tauriLib, /\.plugin\(tauri_plugin_updater::Builder::new\(\)\.build\(\)\)/, 'Tauri Builder 必须初始化 updater 插件');
+assert.match(tauriLib, /\.plugin\(tauri_plugin_process::init\(\)\)/, 'Tauri Builder 必须初始化 process 插件');
+assert.ok(desktopCapability.permissions.includes('updater:default'), '主窗口 capability 必须授权 updater 默认权限');
+assert.ok(desktopCapability.permissions.includes('updater:allow-download-and-install'), '主窗口 capability 必须授权下载安装更新');
+assert.ok(desktopCapability.permissions.includes('process:allow-restart'), '主窗口 capability 必须授权更新完成后重启应用');
 assert.equal(rootPackage.scripts['package:desktop'], 'pnpm build:packages && pnpm --filter @gsat/desktop tauri build', 'package:desktop 必须先构建共享包，再执行真实 Tauri bundle 打包');
 assert.equal(rootPackage.scripts['verify:release'], 'pnpm verify:tauri-release-config && pnpm package:desktop', 'verify:release 必须先校验发布配置，再生成安装包');
 
@@ -46,6 +66,7 @@ assert.match(readme, /\.dmg/, 'README 必须说明 macOS dmg 产物');
 assert.match(readme, /Apple Silicon[\s\S]*Intel|Intel[\s\S]*Apple Silicon/, 'README 必须说明 macOS Apple Silicon 与 Intel 两套安装包');
 assert.match(readme, /\.msi|setup\.exe/, 'README 必须说明 Windows 安装包产物');
 assert.match(readme, /\.deb|\.rpm|\.AppImage/, 'README 必须说明 Linux 安装包产物');
+assert.match(readme, /应用内更新[\s\S]*?latest\.json[\s\S]*?TAURI_SIGNING_PRIVATE_KEY/, 'README 必须说明应用内更新依赖 latest.json 和 Tauri updater 签名私钥');
 
 for (const ignoredArtifact of ['*.app/', '*.dmg', '*.msi', '*.exe', '*.deb', '*.rpm', '*.AppImage']) {
   assert.match(gitignore, new RegExp(`^${escapeRegExp(ignoredArtifact)}$`, 'm'), `.gitignore 必须忽略本地 Tauri 打包产物：${ignoredArtifact}`);
@@ -68,6 +89,9 @@ assert.match(workflow, /platform:\s*macOS Intel[\s\S]*?args:\s*--target x86_64-a
 assert.match(workflow, /platform:\s*Windows[\s\S]*?args:\s*--bundles nsis/, 'Windows runner 必须只构建 NSIS 安装包，避免 MSI/WiX 打包链路拖慢或阻塞');
 assert.match(workflow, /Install Rust target[\s\S]*?if:\s*matrix\.rust_targets != ''[\s\S]*?rustup target add \$\{\{ matrix\.rust_targets \}\}/, 'Release workflow 必须只在矩阵声明 target 时安装 macOS 交叉编译 target');
 assert.match(workflow, /tauri-apps\/tauri-action@v1/, 'Release workflow 必须使用 Tauri 官方 GitHub Action 上传安装包');
+assert.match(workflow, /TAURI_SIGNING_PRIVATE_KEY/, 'Release workflow 必须传入 updater 签名私钥');
+assert.match(workflow, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD/, 'Release workflow 必须传入 updater 签名私钥密码');
+assert.match(workflow, /latest\.json/, 'Release workflow 必须校验或说明上传 GitHub Releases 静态更新清单 latest.json');
 assert.match(workflow, /tagName:/, 'Release workflow 必须用版本号生成 Release tag');
 assert.match(workflow, /releaseBody:/, 'Release workflow 必须把更新日志写入 Release');
 assert.match(workflow, /uploadPlainBinary:\s*false/, 'Release workflow 必须禁止上传裸二进制文件');
