@@ -332,7 +332,7 @@ jobs:
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
         run: |
           for attempt in {1..18}; do
-            assets="$(gh release view "$TAG_NAME" --json assets --jq '.assets[].name' || true)"
+            assets="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' || true)"
             if grep -Fxq 'latest.json' <<< "$assets"; then
               echo "Release 已包含 Tauri updater 静态清单 latest.json。"
               exit 0
@@ -342,5 +342,5 @@ jobs:
           done
           echo "Release 未找到 latest.json，请检查 Tauri updater artifacts 和签名密钥配置。" >&2
           echo "当前 Release 资产："
-          gh release view "$TAG_NAME" --json assets --jq '.assets[].name' || true
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' || true
           exit 1
