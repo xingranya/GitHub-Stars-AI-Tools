@@ -19,8 +19,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -b tsconfig.json",
-    "verify:provider": "pnpm build && node scripts/verify-provider.mjs"
+    "build": "tsc -b tsconfig.json"
   },
   "dependencies": {
     "@gsat/domain": "workspace:*"
