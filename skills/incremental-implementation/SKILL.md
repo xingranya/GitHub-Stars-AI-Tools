@@ -198,7 +198,7 @@ Be explicit about what's in scope and what's NOT in scope for each increment.
 
 ## Increment Checklist
 
-After each increment, verify:
+After each increment, check:
 
 - [ ] The change does one thing and does it completely
 - [ ] All existing tests still pass (`npm test`)
