@@ -19,6 +19,8 @@ import type {
 type RecommendationCandidateStatus = 'new' | 'marked' | 'ignored' | 'starred';
 type RecommendationCandidateAction = 'star' | 'mark' | 'ignore';
 
+const README_SUMMARY_PROMPT_CHAR_LIMIT = 18_000;
+
 const LANGUAGE_COLORS: Record<string, string> = {
   TypeScript: '#3178C6',
   JavaScript: '#f1e05a',
@@ -1472,6 +1474,19 @@ function RepoDetailPanel(props: {
     () => extractReadmeHeadings(detail?.readme?.rawMarkdown ?? '').slice(0, 12),
     [detail?.readme?.rawMarkdown],
   );
+  const readmeCharCount = useMemo(
+    () => Array.from(detail?.readme?.rawMarkdown ?? '').length,
+    [detail?.readme?.rawMarkdown],
+  );
+  const shouldShowReadmeTruncationWarning = Boolean(
+    aiDoc
+      && detail?.readme
+      && aiDoc.sourceHash === detail.readme.contentHash
+      && readmeCharCount > README_SUMMARY_PROMPT_CHAR_LIMIT,
+  );
+  const readmePromptCoverage = readmeCharCount > 0
+    ? Math.round((README_SUMMARY_PROMPT_CHAR_LIMIT / readmeCharCount) * 100)
+    : 100;
   const canApplySuggestedTags = Boolean(aiDoc?.suggestedTags.length);
   const visibleAiStream = aiStream?.repositoryId === repo.id ? aiStream : null;
 
@@ -1699,6 +1714,17 @@ function RepoDetailPanel(props: {
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 custom-scrollbar">
               {isGeneratingAiDocument && (
                 <AiStreamPreview stream={visibleAiStream} />
+              )}
+              {shouldShowReadmeTruncationWarning && (
+                <div className="rounded-lg border border-warning/25 bg-warning/10 px-3 py-2 text-[12px] leading-relaxed text-on-surface-variant">
+                  <div className="mb-1 flex items-center gap-1.5 font-semibold text-on-surface">
+                    <Icon name="warning" size={14} />
+                    README 较长，摘要可能不完整
+                  </div>
+                  <p>
+                    当前 README 约 {compactNumber(readmeCharCount)} 字符，AI 摘要基于前 {compactNumber(README_SUMMARY_PROMPT_CHAR_LIMIT)} 字符生成，覆盖约 {readmePromptCoverage}%。建议核对左侧原文的安装、用法和限制章节。
+                  </p>
+                </div>
               )}
               {/* AI 摘要 */}
               {aiDoc ? (
