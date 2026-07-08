@@ -57,11 +57,17 @@
 
 ### macOS 首次打开提示
 
-当前 macOS 安装包暂未使用 Apple Developer ID 签名，首次打开时可能提示“移动到废纸篓”。这是系统 Gatekeeper 对未签名应用的拦截，不代表应用损坏。安装到“应用程序”后，在终端运行下面这一行即可正常打开：
+当前 macOS 安装包暂未使用 Apple Developer ID 签名，首次打开时可能提示“移动到废纸篓”或“无法打开”。这是系统 Gatekeeper 对未签名应用的拦截，不代表应用损坏。
+
+建议优先使用 Finder 放行：将应用安装到“应用程序”后，在 Finder 中按住 Control 点击 `GitHub-Stars-AI-Tools.app`，选择“打开”，再在系统确认弹窗中继续打开。
+
+如果仍然无法打开，可以在终端移除隔离属性后再启动：
 
 ```bash
-sudo xattr -r -d com.apple.quarantine "/Applications/GitHub-Stars-AI-Tools.app"
+xattr -dr com.apple.quarantine "/Applications/GitHub-Stars-AI-Tools.app"
 ```
+
+如果提示权限不足，再使用 `sudo` 重新执行同一命令。建议只安装来自本项目 GitHub Release 的安装包。
 
 ## AI 服务
 
