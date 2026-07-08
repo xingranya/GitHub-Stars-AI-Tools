@@ -19,8 +19,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -b tsconfig.json",
-    "verify:migrations": "node scripts/verify-migrations.mjs"
+    "build": "tsc -b tsconfig.json"
   },
   "dependencies": {
     "@gsat/domain": "workspace:*"
