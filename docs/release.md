@@ -9,9 +9,6 @@
 ```bash
 corepack enable
 pnpm install
-pnpm --filter @gsat/desktop verify:settings-flow
-pnpm verify:commands
-pnpm verify:tauri-release-config
 pnpm --filter @gsat/desktop build
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```

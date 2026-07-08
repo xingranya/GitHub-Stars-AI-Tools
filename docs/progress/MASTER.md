@@ -85,4 +85,4 @@
 - README 中文处理必须基于 hash 缓存，避免重复扣费。
 - 用户 notes 默认不发送给 AI。
 - 普通用户只在应用内填写 GitHub Token 与 AI Key；源码、GitHub Actions 和发布包不要求安装前配置 `.env`，也不要求普通用户参与发布验收。
-- 日常提交检查不运行会生成安装包的 `pnpm verify:release`，避免把 `target/`、`dist/` 或安装包产物带回工作树。
+- 日常提交检查只运行构建和编译检查，避免把 `target/`、`dist/` 或安装包产物带回工作树。

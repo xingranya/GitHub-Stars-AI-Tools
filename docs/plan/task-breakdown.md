@@ -288,11 +288,11 @@
 - SQLite 初始 schema 与持久化验证已覆盖 `input_tokens`、`output_tokens` 字段。
 - 失败任务卡片已提供同步、README、AI 摘要、Gist 导出和 Gist 导入的重试入口。
 - 任务进度卡片会展示当前阶段和正在处理的仓库名，欢迎页全屏任务也有同等反馈。
-- 发布包真实链路复核项已纳入 `verify:acceptance` 验收矩阵，覆盖本地数据库、应用设置存储、账号连接、Stars 同步、README 抓取、AI 摘要、AI 标签网络和相似推荐。
+- 发布包真实链路复核项在打包应用内完成，覆盖本地数据库、应用设置存储、账号连接、Stars 同步、README 抓取、AI 摘要、AI 标签网络和相似推荐。
 - 设置页真实链路自检完成后会持久化发布包自检记录，只保存检查时间和通过、失败、跳过数量，不保存 Token、AI Key 或错误详情。
 - 真实链路复核只在打包应用内完成；用户安装后填写自己的 GitHub Token、AI 请求地址、API Key 和模型 ID 即可自检，不需要安装前配置环境变量或额外脚本。
 
-**验证**：`pnpm verify:task-feedback`、`pnpm verify:settings-flow`、`pnpm verify:acceptance`。
+**验证**：`pnpm build` 与 `cargo check`。
 
 **依赖**：Task 4.2、Task 5.2。
 

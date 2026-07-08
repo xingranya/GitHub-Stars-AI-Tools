@@ -31,7 +31,7 @@
 ## 📊 当前状态
 
 ### 验收状态
-- `pnpm verify:mvp` 覆盖认证、同步、搜索、AI、Gist、桌面运行时、UI 约束、SQLite 初始化和 Tauri 发版配置。
+- `pnpm build` 和 `cargo check` 覆盖前端构建、共享包类型检查和 Rust 后端编译。
 - Rust 后端单元测试覆盖 GitHub API、AI Provider、SQLite 持久化、搜索上下文、标签网络和相似推荐关键路径。
 
 ### 功能状态
