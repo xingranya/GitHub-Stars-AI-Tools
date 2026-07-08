@@ -304,6 +304,25 @@ jobs:
           uploadPlainBinary: false
           args: ${{ matrix.args }} ${{ steps.windows-signing.outputs.tauri_config_arg }}
 
+      - name: Verify updater manifest asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+        run: |
+          for attempt in {1..6}; do
+            assets="$(gh release view "$TAG_NAME" --json assets --jq '.assets[].name' || true)"
+            if grep -Fxq 'latest.json' <<< "$assets"; then
+              echo "Release 已包含 Tauri updater 静态清单 latest.json。"
+              exit 0
+            fi
+            echo "等待 latest.json 上传完成，第 $attempt 次检查。"
+            sleep 10
+          done
+          echo "Release 未找到 latest.json，请检查 Tauri updater artifacts 和签名密钥配置。" >&2
+          gh release view "$TAG_NAME" --json assets --jq '.assets[].name' || true
+          exit 1
+
       - name: Repackage macOS DMG with large Finder icons
         if: runner.os == 'macOS'
         shell: bash
