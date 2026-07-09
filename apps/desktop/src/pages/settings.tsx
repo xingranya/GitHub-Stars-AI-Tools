@@ -155,6 +155,7 @@ const PROJECT_REPOSITORY_URL = 'https://github.com/xingranya/GitHub-Stars-AI-Too
 const PROJECT_ISSUES_URL = 'https://github.com/xingranya/GitHub-Stars-AI-Tools/issues';
 const PROJECT_LICENSE_URL = 'https://github.com/xingranya/GitHub-Stars-AI-Tools/blob/main/LICENSE';
 const PROJECT_ACKNOWLEDGEMENTS_URL = 'https://github.com/xingranya/GitHub-Stars-AI-Tools#%E8%87%B4%E8%B0%A2';
+const WEILOO_GPT_URL = 'https://ai.weiloo.com';
 
 type AiConnectionTestResult = {
   summaryZh: string;
@@ -1084,7 +1085,21 @@ function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSe
 
   return (
     <section className="glass-panel rounded-xl p-6">
-      <h3 className="font-headline-md text-[20px] font-semibold text-on-surface mb-6">AI 引擎配置</h3>
+      <div className="mb-4">
+        <h3 className="font-headline-md text-[20px] font-semibold text-on-surface">AI 引擎配置</h3>
+        <p className="mt-1 font-body-md text-sm text-on-surface-variant">
+          推荐使用
+          <a
+            href={WEILOO_GPT_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-primary underline-offset-4 hover:underline"
+          >
+            weiloo GPT
+          </a>
+          ，高级模型效果更好，费用更低！
+        </p>
+      </div>
       <div className="space-y-6">
         <div>
           <label className="font-body-md text-on-surface font-medium mb-2 block">AI 服务</label>
