@@ -11,6 +11,7 @@ use tauri::Manager;
 const INITIAL_SCHEMA_SQL: &str =
     include_str!("../../../../packages/storage/migrations/001_initial_schema.sql");
 const LEGACY_SQLITE_DATABASE_FILE_NAMES: &[&str] = &["stars-ai-tools.sqlite3"];
+const OTHER_LANGUAGE_LABEL: &str = "其他";
 const REQUIRED_SCHEMA_COLUMNS: &[(&str, &[&str])] = &[
     ("schema_migrations", &["version", "name", "applied_at"]),
     (
@@ -3277,7 +3278,11 @@ fn build_repository_filter_clause(filters: &RepositoryListFilters<'_>) -> String
     }
 
     if let Some(language) = normalize_optional_text(filters.language) {
-        clauses.push(format!("r.language = {}", sql_text(language)));
+        if language == OTHER_LANGUAGE_LABEL {
+            clauses.push("(r.language IS NULL OR TRIM(r.language) = '')".to_owned());
+        } else {
+            clauses.push(format!("r.language = {}", sql_text(language)));
+        }
     }
 
     if let Some(tag_id) = normalize_optional_text(filters.tag_id) {
@@ -5033,7 +5038,9 @@ INSERT INTO repositories (id, account_id, owner, name, full_name, description, l
 VALUES
   ('1001:1', '1001', 'owner', 'react-ui', 'owner/react-ui', 'React UI toolkit', 'TypeScript', '["react","ui"]', 'https://github.com/owner/react-ui', 10, 1, '2026-01-03T00:00:00Z'),
   ('1001:2', '1001', 'owner', 'react-python', 'owner/react-python', 'React helper in Python', 'Python', '["react"]', 'https://github.com/owner/react-python', 9, 1, '2026-01-02T00:00:00Z'),
-  ('1001:3', '1001', 'owner', 'plain-ui', 'owner/plain-ui', 'Plain UI toolkit', 'TypeScript', '["ui"]', 'https://github.com/owner/plain-ui', 8, 1, '2026-01-01T00:00:00Z');
+  ('1001:3', '1001', 'owner', 'plain-ui', 'owner/plain-ui', 'Plain UI toolkit', 'TypeScript', '["ui"]', 'https://github.com/owner/plain-ui', 8, 1, '2026-01-01T00:00:00Z'),
+  ('1001:4', '1001', 'owner', 'unknown-language', 'owner/unknown-language', 'No detected language', NULL, '[]', 'https://github.com/owner/unknown-language', 7, 1, '2026-01-05T00:00:00Z'),
+  ('1001:5', '1001', 'owner', 'blank-language', 'owner/blank-language', 'Blank language', '', '[]', 'https://github.com/owner/blank-language', 6, 1, '2026-01-04T00:00:00Z');
 INSERT INTO tags (id, account_id, name) VALUES ('tag-ui', '1001', 'UI');
 INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:1', 'tag-ui');
 INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:2', 'tag-ui');
@@ -5060,6 +5067,28 @@ INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:2', 'tag-ui');
         assert_eq!(page.items[0].full_name, "owner/react-ui");
         assert_eq!(page.items[0].tag_ids, vec!["tag-ui".to_owned()]);
         assert_eq!(page.items[0].tag_names, vec!["UI".to_owned()]);
+
+        let other_language_page = storage
+            .list_repository_page(
+                20,
+                0,
+                RepositoryListFilters {
+                    account_id: Some("1001"),
+                    keyword: None,
+                    language: Some(OTHER_LANGUAGE_LABEL),
+                    tag_id: None,
+                },
+            )
+            .expect("其他语言筛选应匹配未识别语言仓库");
+        assert_eq!(other_language_page.total_count, 2);
+        assert_eq!(
+            other_language_page
+                .items
+                .iter()
+                .map(|repository| repository.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1001:4", "1001:5"]
+        );
 
         let _ = std::fs::remove_file(database_path);
     }

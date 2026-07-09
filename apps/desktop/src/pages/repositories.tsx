@@ -64,8 +64,22 @@ function getBatchAiLimitValue(limit: BatchAiLimit) {
   return Number(limit);
 }
 
+const OTHER_LANGUAGE_FILTER = '其他';
+
+function repositoryLanguageMatchesFilter(language: string | null, filter: string) {
+  if (!filter) {
+    return true;
+  }
+
+  if (filter === OTHER_LANGUAGE_FILTER) {
+    return !language || language.trim() === '';
+  }
+
+  return language === filter;
+}
+
 function repositoryMatchesLocalFilters(repo: RepositoryListItem, filters: { keyword: string; language: string; tagId: string }) {
-  if (filters.language && repo.language !== filters.language) {
+  if (!repositoryLanguageMatchesFilter(repo.language, filters.language)) {
     return false;
   }
 
