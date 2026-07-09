@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useWorkspace } from '@/providers/workspace-provider';
 import { useAppSettings } from '@/providers/settings-provider';
 import { useAppUpdate, type AppUpdateContextValue } from '@/providers/app-update-provider';
+import { AppUpdatePanel } from '@/components/app-update-panel';
 import { Icon } from '@/components/ui/icon';
 import {
   getAiConfigMessage,
@@ -16,7 +17,7 @@ import { COLOR_PRESETS } from '@/types-settings';
 import type { AiStreamEvent, DashboardStats, RuntimeReadinessCheckItem, RuntimeReadinessCheckResult } from '@/types';
 import type { AISettings as AISettingsValue, RuntimeSelfCheckRecord, ThemeSettings as ThemeSettingsValue } from '@/types-settings';
 
-type SettingsTab = 'github' | 'ai' | 'general' | 'backup';
+type SettingsTab = 'github' | 'ai' | 'general' | 'backup' | 'about';
 type AIProviderPreset = AISettingsValue['providerPreset'];
 
 type AIProviderPresetOption = {
@@ -199,6 +200,7 @@ export function SettingsPage() {
     { key: 'ai', icon: 'smart_toy', label: 'AI 引擎配置', shortLabel: '引擎' },
     { key: 'general', icon: 'tune', label: '通用设置', shortLabel: '通用' },
     { key: 'backup', icon: 'backup', label: '数据备份', shortLabel: '备份' },
+    { key: 'about', icon: 'info', label: '关于项目', shortLabel: '关于' },
   ];
   const activeTabLabel = tabs.find((tab) => tab.key === activeTab)?.label ?? '设置';
 
@@ -209,7 +211,7 @@ export function SettingsPage() {
           <h2 className="font-headline-md text-headline-md text-on-surface">设置</h2>
           <p className="mt-1 font-body-md text-sm text-on-surface-variant">{activeTabLabel}</p>
         </div>
-        <nav className="grid w-full max-w-[520px] grid-cols-4 gap-2 rounded-xl border border-card-border bg-surface/55 p-2 shadow-sm backdrop-blur-md">
+        <nav className="grid w-full max-w-[620px] grid-cols-5 gap-2 rounded-xl border border-card-border bg-surface/55 p-2 shadow-sm backdrop-blur-md">
           {tabs.map((tab) => (
             <button
               key={tab.key}
@@ -246,10 +248,9 @@ export function SettingsPage() {
           />
         )}
         {activeTab === 'ai' && <AISettings settingsHook={settingsHook} />}
-        {activeTab === 'general' && (
-          <GeneralSettings settingsHook={settingsHook} workspace={workspace} appUpdate={appUpdate} />
-        )}
+        {activeTab === 'general' && <GeneralSettings settingsHook={settingsHook} workspace={workspace} />}
         {activeTab === 'backup' && <BackupSettings workspace={workspace} />}
+        {activeTab === 'about' && <AboutSettings appUpdate={appUpdate} />}
       </div>
     </div>
   );
@@ -1710,11 +1711,9 @@ function getAiKeySaveMessage(status: ReturnType<typeof useAppSettings>['aiKeySav
 function GeneralSettings({
   settingsHook,
   workspace,
-  appUpdate,
 }: {
   settingsHook: ReturnType<typeof useAppSettings>;
   workspace: ReturnType<typeof useWorkspace>;
-  appUpdate: AppUpdateContextValue;
 }) {
   const [isClearingAllLocalData, setIsClearingAllLocalData] = useState(false);
   const [isClearDataConfirmOpen, setIsClearDataConfirmOpen] = useState(false);
@@ -1854,7 +1853,6 @@ function GeneralSettings({
             </div>
           </div>
         )}
-        <AppUpdateSettings appUpdate={appUpdate} />
         <div className="border-t border-card-border pt-5">
           <div className="mb-5 rounded-xl border border-error/25 bg-error/10 p-4">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -1933,239 +1931,91 @@ function GeneralSettings({
               </div>
             </div>
           )}
-          <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <Icon name="stars" size={20} className="text-primary" />
-                  <h4 className="font-body-lg font-semibold text-on-surface">GitHub-Stars-AI-Tools</h4>
-                </div>
-                <p className="mt-2 max-w-2xl font-body-md text-sm leading-relaxed text-on-surface-variant">
-                  本项目源码公开，采用非商用许可。个人学习、研究和非营利用途可以使用；商业使用、集成或再分发需要另行获得授权。
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-on-surface-variant">
-                  <span className="rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1">GSAT</span>
-                  <span className="rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1">本地优先客户端</span>
-                  <span className="rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1">PolyForm Noncommercial 1.0.0</span>
-                </div>
-              </div>
-              <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:min-w-40">
-                <a
-                  href={PROJECT_REPOSITORY_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-primary/20 transition-all hover:-translate-y-0.5 hover:brightness-110 active:translate-y-0"
-                >
-                  <Icon name="code" size={17} />
-                  项目仓库
-                  <Icon name="open_in_new" size={15} />
-                </a>
-                <a
-                  href={PROJECT_ISSUES_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface px-3 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-high"
-                >
-                  <Icon name="bug_report" size={17} />
-                  问题反馈
-                  <Icon name="open_in_new" size={15} />
-                </a>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-2 border-t border-outline-variant/25 pt-3 md:grid-cols-2">
-              <a
-                href={PROJECT_LICENSE_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-start gap-2 rounded-lg border border-outline-variant/25 bg-surface px-3 py-2 text-sm text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
-              >
-                <Icon name="policy" size={18} className="mt-0.5 text-primary" />
-                <span>
-                  <span className="block font-medium text-on-surface">查看许可证</span>
-                  <span className="text-xs">确认非商用授权边界</span>
-                </span>
-              </a>
-              <a
-                href={PROJECT_ACKNOWLEDGEMENTS_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-start gap-2 rounded-lg border border-outline-variant/25 bg-surface px-3 py-2 text-sm text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
-              >
-                <Icon name="diversity_3" size={18} className="mt-0.5 text-primary" />
-                <span>
-                  <span className="block font-medium text-on-surface">开源组件鸣谢</span>
-                  <span className="text-xs">查看项目依赖与生态致谢</span>
-                </span>
-              </a>
-            </div>
-          </div>
         </div>
       </div>
     </section>
   );
 }
 
-function AppUpdateSettings({ appUpdate }: { appUpdate: AppUpdateContextValue }) {
-  const isChecking = appUpdate.status === 'checking';
-  const isDownloading = appUpdate.status === 'downloading';
-  const canInstall = appUpdate.status === 'available' && Boolean(appUpdate.availableVersion);
-  const statusMessage = getAppUpdateStatusMessage(appUpdate);
-
+function AboutSettings({ appUpdate }: { appUpdate: AppUpdateContextValue }) {
   return (
-    <div className="border-t border-card-border py-5">
-      <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <Icon name="system_update_alt" size={20} className="text-primary" />
-              <h4 className="font-body-lg font-semibold text-on-surface">应用更新</h4>
-            </div>
-            <div className="mt-3 grid gap-2 text-sm text-on-surface-variant sm:grid-cols-2">
-              <p>
-                <span className="font-medium text-on-surface">当前版本：</span>
-                {appUpdate.currentVersion || '读取中'}
+    <section className="glass-panel rounded-xl p-6">
+      <h3 className="mb-6 font-headline-md text-[20px] font-semibold text-on-surface">关于项目</h3>
+      <div className="space-y-5">
+        <div className="rounded-xl border border-outline-variant/30 bg-surface-container-low p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Icon name="stars" size={20} className="shrink-0 text-primary" />
+                <h4 className="min-w-0 font-body-lg font-semibold text-on-surface">GitHub-Stars-AI-Tools</h4>
+              </div>
+              <p className="mt-2 max-w-2xl font-body-md text-sm leading-relaxed text-on-surface-variant">
+                面向 GitHub Stars 的本地优先桌面知识库，用 README、AI 摘要和标签网络把收藏仓库整理成可检索、可理解的个人技术资产。
               </p>
-              <p>
-                <span className="font-medium text-on-surface">最近检查：</span>
-                {formatUpdateCheckedAt(appUpdate.lastCheckedAt)}
+              <p className="mt-2 max-w-2xl font-body-md text-sm leading-relaxed text-on-surface-variant">
+                本项目源码公开，采用非商用许可。个人学习、研究和非营利用途可以使用；商业使用、集成或再分发需要另行获得授权。
               </p>
-              {appUpdate.availableVersion && (
-                <p>
-                  <span className="font-medium text-on-surface">可用版本：</span>
-                  {appUpdate.availableVersion}
-                </p>
-              )}
-              {appUpdate.releaseDate && (
-                <p>
-                  <span className="font-medium text-on-surface">发布时间：</span>
-                  {formatUpdateCheckedAt(appUpdate.releaseDate)}
-                </p>
-              )}
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-on-surface-variant">
+                <span className="rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1">GSAT</span>
+                <span className="rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1">本地优先客户端</span>
+                <span className="rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1">AI 知识整理</span>
+                <span className="rounded-lg border border-outline-variant/30 bg-surface px-2.5 py-1">PolyForm Noncommercial 1.0.0</span>
+              </div>
             </div>
-            {statusMessage && (
-              <p
-                className={`mt-3 rounded-lg border px-3 py-2 font-body-md text-sm ${
-                  appUpdate.status === 'error'
-                    ? 'border-error/20 bg-error/10 text-error'
-                    : appUpdate.status === 'available' || appUpdate.status === 'installed'
-                      ? 'border-success/20 bg-success/10 text-success'
-                      : 'border-outline-variant/30 bg-surface text-on-surface-variant'
-                }`}
+            <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:min-w-40">
+              <a
+                href={PROJECT_REPOSITORY_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-primary/20 transition-all hover:-translate-y-0.5 hover:brightness-110 active:translate-y-0"
               >
-                {statusMessage}
-              </p>
-            )}
-            {appUpdate.releaseBody && (
-              <div className="mt-3 rounded-lg border border-outline-variant/25 bg-surface p-3">
-                <p className="font-body-md text-xs font-medium text-on-surface">更新说明</p>
-                <p className="mt-2 max-h-36 overflow-y-auto whitespace-pre-line font-body-md text-sm leading-relaxed text-on-surface-variant">
-                  {appUpdate.releaseBody}
-                </p>
-              </div>
-            )}
-            {appUpdate.status === 'downloading' && appUpdate.downloadProgress && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between gap-3 text-xs text-on-surface-variant">
-                  <span className="font-medium text-on-surface">下载进度</span>
-                  <span>{appUpdate.downloadProgress.percent}%</span>
-                </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface">
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width]"
-                    style={{ width: `${appUpdate.downloadProgress.percent}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-on-surface-variant">
-                  已下载 {formatBytes(appUpdate.downloadProgress.downloadedBytes)}
-                  {appUpdate.downloadProgress.totalBytes ? ` / ${formatBytes(appUpdate.downloadProgress.totalBytes)}` : ''}
-                </p>
-              </div>
-            )}
+                <Icon name="code" size={17} />
+                项目仓库
+                <Icon name="open_in_new" size={15} />
+              </a>
+              <a
+                href={PROJECT_ISSUES_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface px-3 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-high"
+              >
+                <Icon name="bug_report" size={17} />
+                问题反馈
+                <Icon name="open_in_new" size={15} />
+              </a>
+            </div>
           </div>
-          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:min-w-36">
-            <button
-              type="button"
-              onClick={() => void appUpdate.checkForUpdate()}
-              disabled={isChecking || isDownloading}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-outline-variant/35 bg-surface px-3 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-60"
+          <div className="mt-4 grid gap-2 border-t border-outline-variant/25 pt-3 md:grid-cols-2">
+            <a
+              href={PROJECT_LICENSE_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-start gap-2 rounded-lg border border-outline-variant/25 bg-surface px-3 py-2 text-sm text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
             >
-              <Icon name="refresh" size={17} className={isChecking ? 'animate-spin' : ''} />
-              {isChecking ? '检查中' : '检查更新'}
-            </button>
-            {canInstall && (
-              <button
-                type="button"
-                onClick={() => void appUpdate.installUpdate()}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110"
-              >
-                <Icon name="download" size={17} />
-                立即安装
-              </button>
-            )}
-            {appUpdate.status === 'installed' && (
-              <button
-                type="button"
-                onClick={() => void appUpdate.relaunchApp()}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110"
-              >
-                <Icon name="restart_alt" size={17} />
-                重启应用
-              </button>
-            )}
+              <Icon name="policy" size={18} className="mt-0.5 shrink-0 text-primary" />
+              <span className="min-w-0">
+                <span className="block font-medium text-on-surface">查看许可证</span>
+                <span className="text-xs">确认非商用授权边界</span>
+              </span>
+            </a>
+            <a
+              href={PROJECT_ACKNOWLEDGEMENTS_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-start gap-2 rounded-lg border border-outline-variant/25 bg-surface px-3 py-2 text-sm text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+            >
+              <Icon name="diversity_3" size={18} className="mt-0.5 shrink-0 text-primary" />
+              <span className="min-w-0">
+                <span className="block font-medium text-on-surface">开源组件鸣谢</span>
+                <span className="text-xs">查看项目依赖与生态致谢</span>
+              </span>
+            </a>
           </div>
         </div>
+        <AppUpdatePanel appUpdate={appUpdate} />
       </div>
-    </div>
+    </section>
   );
-}
-
-function getAppUpdateStatusMessage(appUpdate: AppUpdateContextValue) {
-  switch (appUpdate.status) {
-    case 'checking':
-      return '正在检查更新...';
-    case 'available':
-      return `发现新版本 ${appUpdate.availableVersion ?? ''}，可查看说明后立即安装。`;
-    case 'not-available':
-      return '已是最新版本。';
-    case 'downloading':
-      return '正在下载并安装更新，请保持应用打开。';
-    case 'installed':
-      return '更新已安装，重启应用后生效。';
-    case 'error':
-      return appUpdate.errorMessage ? `更新检查失败：${appUpdate.errorMessage}` : '更新检查失败，请稍后重试。';
-    case 'idle':
-    default:
-      return '应用会在启动时静默检查更新，也可以在这里手动检查。';
-  }
-}
-
-function formatUpdateCheckedAt(value: string | null) {
-  if (!value) {
-    return '尚未检查';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString();
-}
-
-function formatBytes(value: number) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return '0 B';
-  }
-
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let size = value;
-  let unitIndex = 0;
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 function normalizeSyncIntervalInput(value: string) {

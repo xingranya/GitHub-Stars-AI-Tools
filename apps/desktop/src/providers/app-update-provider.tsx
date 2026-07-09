@@ -3,13 +3,21 @@
  * 统一管理 Tauri updater 检查、下载、安装和重启状态。
  */
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import type { DownloadEvent } from '@tauri-apps/plugin-updater';
 
-export type AppUpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'installed' | 'error';
+export type AppUpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'installed'
+  | 'relaunching'
+  | 'error';
 
 export type AppUpdateDownloadProgress = {
   downloadedBytes: number;
@@ -54,6 +62,10 @@ const AppUpdateContext = createContext<AppUpdateContextValue | null>(null);
 export function AppUpdateProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppUpdateState>(DEFAULT_UPDATE_STATE);
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
+  const pendingUpdateRef = useRef<Update | null>(null);
+  const checkInFlightRef = useRef<Promise<void> | null>(null);
+  const installInFlightRef = useRef(false);
+  const relaunchInFlightRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +83,104 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function checkForUpdate({ silent = false }: CheckForUpdateOptions = {}) {
+    if (installInFlightRef.current || relaunchInFlightRef.current) {
+      return;
+    }
+
+    if (checkInFlightRef.current) {
+      if (!silent) {
+        setState((current) => ({ ...current, status: 'checking', errorMessage: null }));
+      }
+      await checkInFlightRef.current;
+      return;
+    }
+
+    const checkTask = runUpdateCheck(silent);
+    checkInFlightRef.current = checkTask;
+    try {
+      await checkTask;
+    } finally {
+      checkInFlightRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    void checkForUpdate({ silent: true });
+  }, []);
+
+  async function installUpdate() {
+    if (installInFlightRef.current || relaunchInFlightRef.current) {
+      return;
+    }
+
+    const updateToInstall = pendingUpdateRef.current ?? pendingUpdate;
+    if (!updateToInstall) {
+      setState((current) => ({
+        ...current,
+        status: 'error',
+        errorMessage: '当前没有可安装的更新，请先检查新版本。',
+      }));
+      return;
+    }
+
+    installInFlightRef.current = true;
+    let downloadedBytes = 0;
+    let totalBytes: number | null = null;
+    setState((current) => ({
+      ...current,
+      status: 'downloading',
+      errorMessage: null,
+      downloadProgress: { downloadedBytes: 0, totalBytes: null, percent: 0 },
+    }));
+
+    try {
+      await updateToInstall.downloadAndInstall((event: DownloadEvent) => {
+        if (event.event === 'Started') {
+          downloadedBytes = 0;
+          totalBytes = typeof event.data.contentLength === 'number' ? event.data.contentLength : null;
+        } else if (event.event === 'Progress') {
+          downloadedBytes += event.data.chunkLength;
+        } else if (event.event === 'Finished') {
+          downloadedBytes = totalBytes ?? downloadedBytes;
+        }
+
+        setState((current) => ({
+          ...current,
+          downloadProgress: buildDownloadProgress(downloadedBytes, totalBytes),
+        }));
+      });
+
+      setPendingUpdateValue(null);
+      setState((current) => ({
+        ...current,
+        status: 'installed',
+        errorMessage: null,
+        downloadProgress: buildDownloadProgress(downloadedBytes, totalBytes),
+      }));
+      await requestRelaunch('automatic');
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: 'error',
+        errorMessage: toUpdaterErrorMessage(error),
+      }));
+    } finally {
+      installInFlightRef.current = false;
+    }
+  }
+
+  async function relaunchApp() {
+    await requestRelaunch('manual');
+  }
+
+  const contextValue = useMemo<AppUpdateContextValue>(() => ({
+    ...state,
+    checkForUpdate,
+    installUpdate,
+    relaunchApp,
+  }), [state, checkForUpdate, installUpdate, relaunchApp]);
+
+  async function runUpdateCheck(silent: boolean) {
     setState((current) => ({
       ...current,
       status: silent ? current.status : 'checking',
@@ -81,7 +191,7 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
       const update = await check();
       const checkedAt = new Date().toISOString();
       if (!update) {
-        setPendingUpdate(null);
+        setPendingUpdateValue(null);
         setState((current) => ({
           ...current,
           status: 'not-available',
@@ -95,7 +205,7 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setPendingUpdate(update);
+      setPendingUpdateValue(update);
       setState((current) => ({
         ...current,
         status: 'available',
@@ -114,7 +224,7 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setPendingUpdate(null);
+      setPendingUpdateValue(null);
       setState((current) => ({
         ...current,
         status: 'error',
@@ -124,71 +234,42 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  useEffect(() => {
-    void checkForUpdate({ silent: true });
-  }, []);
+  function setPendingUpdateValue(update: Update | null) {
+    pendingUpdateRef.current = update;
+    setPendingUpdate(update);
+  }
 
-  async function installUpdate() {
-    if (!pendingUpdate) {
-      setState((current) => ({
-        ...current,
-        status: 'error',
-        errorMessage: '当前没有可安装的更新，请先检查新版本。',
-      }));
+  async function requestRelaunch(mode: 'automatic' | 'manual') {
+    if (relaunchInFlightRef.current) {
       return;
     }
 
-    let downloadedBytes = 0;
-    let totalBytes: number | null = null;
+    relaunchInFlightRef.current = true;
     setState((current) => ({
       ...current,
-      status: 'downloading',
+      status: 'relaunching',
       errorMessage: null,
-      downloadProgress: { downloadedBytes: 0, totalBytes: null, percent: 0 },
     }));
 
     try {
-      await pendingUpdate.downloadAndInstall((event: DownloadEvent) => {
-        if (event.event === 'Started') {
-          downloadedBytes = 0;
-          totalBytes = typeof event.data.contentLength === 'number' ? event.data.contentLength : null;
-        } else if (event.event === 'Progress') {
-          downloadedBytes += event.data.chunkLength;
-        } else if (event.event === 'Finished') {
-          downloadedBytes = totalBytes ?? downloadedBytes;
-        }
-
-        setState((current) => ({
-          ...current,
-          downloadProgress: buildDownloadProgress(downloadedBytes, totalBytes),
-        }));
-      });
-
+      await delay(mode === 'automatic' ? 800 : 150);
+      await relaunch();
+      await delay(1600);
       setState((current) => ({
         ...current,
         status: 'installed',
-        errorMessage: null,
-        downloadProgress: buildDownloadProgress(downloadedBytes, totalBytes),
+        errorMessage: '更新已安装，但当前窗口仍未关闭。请再次点击重启应用，或手动退出后重新打开。',
       }));
     } catch (error) {
       setState((current) => ({
         ...current,
-        status: 'error',
-        errorMessage: toUpdaterErrorMessage(error),
+        status: 'installed',
+        errorMessage: `更新已安装，但${mode === 'automatic' ? '自动' : '手动'}重启失败：${toUpdaterErrorMessage(error)}。请再次点击重启应用，或手动退出后重新打开。`,
       }));
+    } finally {
+      relaunchInFlightRef.current = false;
     }
   }
-
-  async function relaunchApp() {
-    await relaunch();
-  }
-
-  const contextValue = useMemo<AppUpdateContextValue>(() => ({
-    ...state,
-    checkForUpdate,
-    installUpdate,
-    relaunchApp,
-  }), [state, checkForUpdate, installUpdate, relaunchApp]);
 
   return <AppUpdateContext.Provider value={contextValue}>{children}</AppUpdateContext.Provider>;
 }
@@ -215,7 +296,7 @@ function buildDownloadProgress(downloadedBytes: number, totalBytes: number | nul
 }
 
 function toUpdaterErrorMessage(error: unknown) {
-  const rawMessage = error instanceof Error ? error.message : String(error);
+  const rawMessage = error instanceof Error ? error.message : String(error ?? '');
   const normalizedMessage = rawMessage.toLowerCase();
 
   if (normalizedMessage.includes('valid release json') || normalizedMessage.includes('latest.json')) {
@@ -236,5 +317,19 @@ function toUpdaterErrorMessage(error: unknown) {
     return '连接更新服务器失败，请检查网络后重试。';
   }
 
+  if (
+    normalizedMessage.includes('permission') ||
+    normalizedMessage.includes('operation not permitted') ||
+    normalizedMessage.includes('access denied')
+  ) {
+    return '更新包写入失败，请确认应用目录权限正常后重试。';
+  }
+
   return rawMessage || '检查更新失败，请稍后重试。';
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
