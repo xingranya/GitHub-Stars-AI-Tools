@@ -104,6 +104,14 @@ const EMPTY_DASHBOARD_STATS: DashboardStats = {
 
 const RECENT_ALL_TAB = '全部';
 const RECENT_OTHER_TAB = '其他';
+const STATS_REFRESH_TASK_IDS = new Set([
+  'sync-stars',
+  'fetch-readmes',
+  'fetch-repository-readme',
+  'generate-ai-document',
+  'batch-generate-ai-documents',
+  'generate-ai-tag-network',
+]);
 
 export function DashboardPage(props: DashboardPageProps) {
   const workspace = useWorkspace();
@@ -111,6 +119,13 @@ export function DashboardPage(props: DashboardPageProps) {
   const [, setIsLoadingStats] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [recentTab, setRecentTab] = useState<string>(RECENT_ALL_TAB);
+  const statsProgressRefreshKey = useMemo(() => {
+    const progress = workspace.taskProgress;
+    if (!progress || !STATS_REFRESH_TASK_IDS.has(progress.taskId)) {
+      return null;
+    }
+    return `${progress.taskId}:${progress.status}:${progress.current}:${progress.total}`;
+  }, [workspace.taskProgress]);
 
   // 从后端拉取聚合统计
   useEffect(() => {
@@ -140,7 +155,15 @@ export function DashboardPage(props: DashboardPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [workspace.authState.user?.id, workspace.repositoryPage, workspace.tags, workspace.syncSummary]);
+  }, [
+    workspace.authState.user?.id,
+    workspace.repositoryPage,
+    workspace.tags,
+    workspace.syncSummary,
+    workspace.readmeSummary,
+    workspace.batchAiSummary,
+    statsProgressRefreshKey,
+  ]);
 
   const displayStats = stats;
 
