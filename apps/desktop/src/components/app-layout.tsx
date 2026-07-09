@@ -31,7 +31,7 @@ type AppLayoutProps = {
 };
 
 const NAV_ITEMS: { key: Page; icon: string; label: string }[] = [
-  { key: 'dashboard', icon: 'dashboard', label: '仪表盘' },
+  { key: 'dashboard', icon: 'home', label: '概览' },
   { key: 'repositories', icon: 'folder_special', label: '全部仓库' },
   { key: 'tag-network', icon: 'hub', label: '标签网络' },
   { key: 'ai-search', icon: 'psychology', label: 'AI 搜索' },
