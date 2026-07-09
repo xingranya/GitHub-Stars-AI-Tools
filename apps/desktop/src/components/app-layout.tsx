@@ -28,6 +28,7 @@ type AppLayoutProps = {
   isRetryingTask: boolean;
   statusMessage: string | null;
   errorMessage: string | null;
+  notificationOpenSignal: number;
 };
 
 const NAV_ITEMS: { key: Page; icon: string; label: string }[] = [
@@ -43,6 +44,15 @@ export function AppLayout(props: AppLayoutProps) {
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const topbarActionsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (props.notificationOpenSignal <= 0) {
+      return;
+    }
+
+    setIsNotificationOpen(true);
+    setIsQuickActionsOpen(false);
+  }, [props.notificationOpenSignal]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {

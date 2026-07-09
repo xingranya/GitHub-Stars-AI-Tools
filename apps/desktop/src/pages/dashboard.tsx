@@ -86,6 +86,8 @@ type DashboardPageProps = {
   onOpenRepository: (query: string) => void;
   onSelectLanguage: (language: string) => void;
   onOpenSettings: () => void;
+  onOpenProfile: () => void;
+  onOpenNotifications: () => void;
 };
 
 const EMPTY_DASHBOARD_STATS: DashboardStats = {
@@ -104,6 +106,7 @@ const EMPTY_DASHBOARD_STATS: DashboardStats = {
 
 const RECENT_ALL_TAB = '全部';
 const RECENT_OTHER_TAB = '其他';
+const RECENT_REPOSITORY_LIMIT = 4;
 const STATS_REFRESH_TASK_IDS = new Set([
   'sync-stars',
   'fetch-readmes',
@@ -205,7 +208,7 @@ export function DashboardPage(props: DashboardPageProps) {
       if (recentTab === RECENT_OTHER_TAB) return !repo.language || !topLanguageSet.has(repo.language);
       return repo.language === recentTab;
     });
-    return filtered.slice(0, 6);
+    return filtered.slice(0, RECENT_REPOSITORY_LIMIT);
   }, [recentSource, recentTab, topLanguageSet]);
 
   if (!displayStats) {
@@ -337,13 +340,13 @@ export function DashboardPage(props: DashboardPageProps) {
       </div>
 
       {/* 中部区域：语言分布 · 同步状态 · 快捷访问 */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(260px,0.7fr)_minmax(300px,0.8fr)]">
         {/* 语言分布 */}
-        <div className="glass-card flex flex-col rounded-xl p-6 lg:col-span-2">
-          <div className="mb-6 flex items-center justify-between">
+        <div className="glass-card flex min-h-[240px] flex-col rounded-xl p-5 sm:p-6">
+          <div className="mb-5 flex items-center justify-between">
             <h3 className="font-headline-md text-lg text-on-surface">语言分布</h3>
           </div>
-          <div className="flex flex-1 flex-col justify-center gap-6">
+          <div className="flex flex-1 flex-col justify-center gap-5">
             {displayStats.languageDistribution.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 py-8 text-on-surface-variant">
                 <Icon name="inbox" size={48} className="opacity-30" />
@@ -361,15 +364,15 @@ export function DashboardPage(props: DashboardPageProps) {
                     />
                   ))}
                 </div>
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                <div className="grid grid-cols-2 gap-x-5 gap-y-3 md:grid-cols-[repeat(auto-fit,minmax(120px,1fr))]">
                   {displayStats.languageDistribution.slice(0, 5).map((item) => (
-                    <div key={item.language} className="flex items-center gap-2">
+                    <div key={item.language} className="flex min-w-0 items-center gap-2">
                       <div
                         className="h-3 w-3 shrink-0 rounded-full"
                         style={{ backgroundColor: getLanguageColor(item.language) }}
                       />
-                      <div>
-                        <p className="font-label-sm text-label-sm font-semibold text-on-surface">{item.language}</p>
+                      <div className="min-w-0">
+                        <p className="truncate font-label-sm text-label-sm font-semibold text-on-surface">{item.language}</p>
                         <p className="font-label-sm text-[11px] text-on-surface-variant">
                           {item.percentage}% ({item.count})
                         </p>
@@ -383,7 +386,7 @@ export function DashboardPage(props: DashboardPageProps) {
         </div>
 
         {/* 同步状态 */}
-        <div className="glass-card flex flex-col justify-between rounded-xl bg-gradient-to-br from-surface-bright to-surface-container-low p-6">
+        <div className="glass-card flex min-h-[240px] flex-col justify-between rounded-xl bg-gradient-to-br from-surface-bright to-surface-container-low p-5 sm:p-6">
           <div>
             <div className="mb-4 flex items-center justify-between">
               <h3 className="font-headline-md text-lg text-on-surface">同步状态</h3>
@@ -401,7 +404,7 @@ export function DashboardPage(props: DashboardPageProps) {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row xl:flex-col 2xl:flex-row">
             <button
               onClick={() => (workspace.authState.user ? void workspace.handleSyncStars() : props.onOpenSettings())}
               disabled={workspace.isSyncingStars}
@@ -413,9 +416,9 @@ export function DashboardPage(props: DashboardPageProps) {
             </button>
             <button
               type="button"
-              onClick={props.onOpenSettings}
-              title="同步记录（在设置中查看）"
-              className="flex shrink-0 items-center gap-0.5 rounded-lg px-2 py-2 font-label-sm text-xs text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+              onClick={props.onOpenNotifications}
+              title="查看通知和任务状态"
+              className="flex shrink-0 items-center justify-center gap-0.5 rounded-lg px-2 py-2 font-label-sm text-xs text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
             >
               同步记录
               <Icon name="chevron_right" size={16} />
@@ -424,7 +427,7 @@ export function DashboardPage(props: DashboardPageProps) {
         </div>
 
         {/* 快捷访问 */}
-        <div className="glass-card flex flex-col rounded-xl p-6">
+        <div className="glass-card flex min-h-[240px] flex-col rounded-xl p-5 sm:p-6">
           <div className="mb-4 flex items-start justify-between gap-3">
             <h3 className="font-headline-md text-lg text-on-surface">快捷访问</h3>
             <Icon name="bolt" size={20} className="mt-0.5 shrink-0 text-primary" />
@@ -436,37 +439,35 @@ export function DashboardPage(props: DashboardPageProps) {
             </div>
           ) : (
             <>
-              <div className="grid flex-1 grid-cols-2 content-start gap-3">
+              <div className="grid flex-1 grid-cols-1 content-start gap-2.5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                 {displayStats.languageDistribution.slice(0, 4).map((item) => (
                   <button
                     key={item.language}
                     type="button"
                     onClick={() => props.onSelectLanguage(item.language)}
-                    className="interactive-btn group flex flex-col items-start gap-3 rounded-lg border border-card-border bg-surface/60 p-3 text-left transition-colors hover:border-primary/25 hover:bg-surface-container-low"
+                    className="interactive-btn group flex items-center gap-3 rounded-lg border border-card-border bg-surface/60 p-2.5 text-left transition-colors hover:border-primary/25 hover:bg-surface-container-low"
                   >
-                    <span className="flex w-full items-start justify-between gap-2">
-                      <span
-                        className="flex h-8 min-w-8 items-center justify-center rounded-lg px-1.5 font-label-sm text-[11px] font-bold text-white"
-                        style={{ backgroundColor: getLanguageColor(item.language) }}
-                      >
-                        {getLanguageShort(item.language)}
-                      </span>
-                      <span className="rounded-md bg-surface-container-high px-1.5 py-0.5 font-label-sm text-[10px] text-on-surface-variant">
-                        {item.percentage}%
-                      </span>
+                    <span
+                      className="flex size-9 shrink-0 items-center justify-center rounded-lg px-1.5 font-label-sm text-[11px] font-bold text-white"
+                      style={{ backgroundColor: getLanguageColor(item.language) }}
+                    >
+                      {getLanguageShort(item.language)}
                     </span>
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                       <span className="block truncate font-body-md text-sm font-semibold text-on-surface">{item.language}</span>
                       <span className="mt-0.5 block font-label-sm text-[11px] text-on-surface-variant">
                         {item.count} 个仓库
                       </span>
+                    </span>
+                    <span className="shrink-0 rounded-md bg-surface-container-high px-1.5 py-0.5 font-label-sm text-[10px] text-on-surface-variant">
+                      {item.percentage}%
                     </span>
                   </button>
                 ))}
               </div>
               <button
                 type="button"
-                onClick={() => props.onSelectLanguage('')}
+                onClick={props.onOpenProfile}
                 className="mt-4 flex items-center justify-center gap-0.5 rounded-lg py-2 font-label-sm text-xs font-medium text-primary transition-colors hover:bg-primary/10"
               >
                 查看全部语言分布
