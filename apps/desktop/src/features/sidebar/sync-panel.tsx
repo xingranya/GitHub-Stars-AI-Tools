@@ -56,8 +56,7 @@ export function SyncPanel(props: SyncPanelProps) {
       </form>
       {props.syncSummary ? (
         <p className="text-xs leading-relaxed text-muted-foreground">
-          <strong className="font-medium text-foreground">Stars 同步：</strong>当前 {props.syncSummary.activeCount}，新增 {props.syncSummary.createdCount}，更新 {props.syncSummary.updatedCount}，移除 {props.syncSummary.removedCount}，扫描 {props.syncSummary.scannedCount}，
-          {props.syncSummary.mode === 'incremental' ? '增量' : '全量'}
+          <strong className="font-medium text-foreground">Stars 同步：</strong>当前 {props.syncSummary.activeCount}，新增 {props.syncSummary.createdCount}，更新 {props.syncSummary.updatedCount}，移除 {props.syncSummary.removedCount}，扫描 {props.syncSummary.scannedCount}
         </p>
       ) : null}
       {props.readmeSummary ? (

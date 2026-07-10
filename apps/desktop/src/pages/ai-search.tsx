@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Icon } from '@/components/ui/icon';
+import { CopyLinkButton } from '@/components/copy-link-button';
 import { useWorkspace } from '@/providers/workspace-provider';
 import { useAppSettings } from '@/providers/settings-provider';
 import { getAiConfigMessage, shouldFlushAiApiKey, toBackendAiRequestConfig } from '@/lib/ai-config';
@@ -1377,6 +1378,7 @@ function SearchResultCard({
               <Icon name={isFindingSimilar ? 'progress_activity' : 'travel_explore'} size={15} className={isFindingSimilar ? 'animate-spin' : ''} />
               {isFindingSimilar ? '发现中' : 'GitHub 相似发现'}
             </button>
+            <CopyLinkButton url={repo.htmlUrl} compact />
             {similarDiscoveryDisabledReason && (
               <p className="basis-full text-[11px] leading-relaxed text-on-surface-variant">
                 GitHub 相似发现需要先完成：{similarDiscoveryDisabledReason}
