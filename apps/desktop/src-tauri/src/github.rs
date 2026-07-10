@@ -55,6 +55,8 @@ pub struct GistExportResult {
 pub struct GitHubRepositoryRecommendation {
     pub candidate_id: Option<String>,
     pub candidate_status: Option<String>,
+    pub candidate_updated_at: Option<String>,
+    pub candidate_category: Option<String>,
     pub full_name: String,
     pub description: Option<String>,
     pub language: Option<String>,
@@ -108,6 +110,7 @@ struct GitHubRepository {
 
 #[derive(Deserialize)]
 struct GitHubSearchRepositoryResponse {
+    total_count: usize,
     items: Vec<GitHubSearchRepositoryItem>,
 }
 
@@ -268,32 +271,58 @@ pub fn search_repositories(
     query: &str,
     per_page: usize,
 ) -> Result<Vec<GitHubRepositoryRecommendation>, String> {
+    Ok(search_repository_page(token, query, "stars", "desc", 1, per_page.clamp(1, 30))?.items)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubRepositorySearchPage {
+    pub total_count: usize,
+    pub items: Vec<GitHubRepositoryRecommendation>,
+}
+
+pub fn search_repository_page(
+    token: &str,
+    query: &str,
+    sort: &str,
+    order: &str,
+    page: usize,
+    per_page: usize,
+) -> Result<GitHubRepositorySearchPage, String> {
     let normalized_query = query.trim();
     if normalized_query.is_empty() {
-        return Ok(Vec::new());
+        return Ok(GitHubRepositorySearchPage {
+            total_count: 0,
+            items: Vec::new(),
+        });
     }
 
-    let url = build_repository_search_url(normalized_query, per_page);
+    let url = build_repository_search_page_url(normalized_query, sort, order, page, per_page)?;
     let body = github_api_get(token, &url, README_ACCEPT)?;
     let response = serde_json::from_str::<GitHubSearchRepositoryResponse>(&body)
         .map_err(|error| format!("GitHub 搜索响应解析失败：{error}"))?;
 
-    Ok(response
-        .items
-        .into_iter()
-        .map(|item| GitHubRepositoryRecommendation {
-            candidate_id: None,
-            candidate_status: None,
-            full_name: item.full_name,
-            description: item.description,
-            language: item.language,
-            topics: item.topics.unwrap_or_default(),
-            html_url: item.html_url,
-            stars_count: item.stargazers_count,
-            forks_count: item.forks_count,
-            pushed_at: item.pushed_at,
-        })
-        .collect())
+    Ok(GitHubRepositorySearchPage {
+        total_count: response.total_count,
+        items: response
+            .items
+            .into_iter()
+            .map(|item| GitHubRepositoryRecommendation {
+                candidate_id: None,
+                candidate_status: None,
+                candidate_updated_at: None,
+                candidate_category: None,
+                full_name: item.full_name,
+                description: item.description,
+                language: item.language,
+                topics: item.topics.unwrap_or_default(),
+                html_url: item.html_url,
+                stars_count: item.stargazers_count,
+                forks_count: item.forks_count,
+                pushed_at: item.pushed_at,
+            })
+            .collect(),
+    })
 }
 
 pub fn star_repository(token: &str, full_name: &str) -> Result<(), String> {
@@ -306,12 +335,26 @@ pub fn star_repository(token: &str, full_name: &str) -> Result<(), String> {
     github_api_put_empty(token, &url, README_ACCEPT)
 }
 
-fn build_repository_search_url(query: &str, per_page: usize) -> String {
-    format!(
-        "{SEARCH_REPOSITORIES_API}?q={query}&sort=stars&order=desc&per_page={per_page}",
+fn build_repository_search_page_url(
+    query: &str,
+    sort: &str,
+    order: &str,
+    page: usize,
+    per_page: usize,
+) -> Result<String, String> {
+    if !matches!(sort, "stars" | "forks" | "help-wanted-issues" | "updated") {
+        return Err("GitHub 搜索排序字段无效".to_owned());
+    }
+    if !matches!(order, "asc" | "desc") {
+        return Err("GitHub 搜索排序方向无效".to_owned());
+    }
+
+    Ok(format!(
+        "{SEARCH_REPOSITORIES_API}?q={query}&sort={sort}&order={order}&page={page}&per_page={per_page}",
         query = percent_encode(query.trim()),
-        per_page = per_page.clamp(1, 30),
-    )
+        page = page.max(1),
+        per_page = per_page.clamp(1, 100),
+    ))
 }
 
 fn split_repository_full_name(full_name: &str) -> Result<(&str, &str), String> {
@@ -409,12 +452,49 @@ mod tests {
 
     #[test]
     fn build_repository_search_url_encodes_query_and_clamps_page_size() {
-        let url =
-            build_repository_search_url("react animation language:TypeScript stars:>1000", 100);
+        let url = build_repository_search_page_url(
+            "react animation language:TypeScript stars:>1000",
+            "stars",
+            "desc",
+            1,
+            30,
+        )
+        .expect("推荐搜索参数应有效");
 
         assert_eq!(
             url,
-            "https://api.github.com/search/repositories?q=react%20animation%20language%3ATypeScript%20stars%3A%3E1000&sort=stars&order=desc&per_page=30"
+            "https://api.github.com/search/repositories?q=react%20animation%20language%3ATypeScript%20stars%3A%3E1000&sort=stars&order=desc&page=1&per_page=30"
+        );
+    }
+
+    #[test]
+    fn build_repository_search_page_url_supports_ranking_pagination() {
+        let url = build_repository_search_page_url(
+            "language:Rust stars:>50 pushed:>=2026-06-10",
+            "stars",
+            "desc",
+            3,
+            100,
+        )
+        .expect("排行榜搜索参数应有效");
+
+        assert_eq!(
+            url,
+            "https://api.github.com/search/repositories?q=language%3ARust%20stars%3A%3E50%20pushed%3A%3E%3D2026-06-10&sort=stars&order=desc&page=3&per_page=100"
+        );
+    }
+
+    #[test]
+    fn build_repository_search_page_url_rejects_unknown_sort_values() {
+        assert!(
+            build_repository_search_page_url("stars:>50", "score", "desc", 1, 20)
+                .expect_err("未知排序字段应被拒绝")
+                .contains("排序字段")
+        );
+        assert!(
+            build_repository_search_page_url("stars:>50", "stars", "random", 1, 20)
+                .expect_err("未知排序方向应被拒绝")
+                .contains("排序方向")
         );
     }
 
