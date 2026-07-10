@@ -8,16 +8,16 @@ import { WorkspaceProvider, useWorkspace } from '@/providers/workspace-provider'
 import { SettingsProvider, useAppSettings } from '@/providers/settings-provider';
 import { AppUpdateProvider, useAppUpdate } from '@/providers/app-update-provider';
 import { shouldFlushAiApiKey } from '@/lib/ai-config';
-import type { RepositoryListItem } from '@/types';
+import type { AppPage, RepositoryListItem } from '@/types';
 
 const DashboardPage = lazy(() => import('@/pages/dashboard').then((module) => ({ default: module.DashboardPage })));
 const RepositoriesPage = lazy(() => import('@/pages/repositories').then((module) => ({ default: module.RepositoriesPage })));
+const DiscoverPage = lazy(() => import('@/pages/discover').then((module) => ({ default: module.DiscoverPage })));
+const RankingsPage = lazy(() => import('@/pages/rankings').then((module) => ({ default: module.RankingsPage })));
 const TagNetworkPage = lazy(() => import('@/pages/tag-network').then((module) => ({ default: module.TagNetworkPage })));
 const AISearchPage = lazy(() => import('@/pages/ai-search').then((module) => ({ default: module.AISearchPage })));
 const ProfilePage = lazy(() => import('@/pages/profile').then((module) => ({ default: module.ProfilePage })));
 const SettingsPage = lazy(() => import('@/pages/settings').then((module) => ({ default: module.SettingsPage })));
-
-type Page = 'dashboard' | 'repositories' | 'tag-network' | 'ai-search' | 'profile' | 'settings';
 
 type RepositoryNavigationState = {
   query: string;
@@ -31,7 +31,7 @@ function AppContent() {
   const workspace = useWorkspace();
   const settingsHook = useAppSettings();
   const appUpdate = useAppUpdate();
-  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
+  const [currentPage, setCurrentPage] = useState<AppPage>('dashboard');
   const [showWelcome, setShowWelcome] = useState(false);
   const [hasDismissedWelcome, setHasDismissedWelcome] = useState(false);
   const [hasDismissedUpdateNotice, setHasDismissedUpdateNotice] = useState(false);
@@ -305,8 +305,18 @@ function AppContent() {
             globalLanguageFilter={repositoryNavigation.language}
             globalTagFilter={repositoryNavigation.tagId}
             globalSelectedRepositoryId={repositoryNavigation.selectedRepositoryId}
+            onOpenDiscover={() => setCurrentPage('discover')}
           />
         );
+      case 'discover':
+        return (
+          <DiscoverPage
+            onOpenRepositories={() => setCurrentPage('repositories')}
+            onOpenSettings={() => setCurrentPage('settings')}
+          />
+        );
+      case 'rankings':
+        return <RankingsPage onOpenSettings={() => setCurrentPage('settings')} />;
       case 'tag-network':
         return <TagNetworkPage onSelectTag={handleRepositoryTagSelect} />;
       case 'ai-search':
