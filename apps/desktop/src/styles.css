@@ -230,29 +230,6 @@ textarea {
     0 2px 8px -5px rgb(25 27 35 / 0.28);
 }
 
-/* 知识库页单独缩放，给左侧列表、README 和 AI 卡片三列同时腾出空间。 */
-.repositories-page-compact {
-  zoom: 0.94;
-}
-
-@media (min-width: 900px) {
-  .repositories-page-compact {
-    zoom: 0.9;
-  }
-}
-
-@media (min-width: 1280px) {
-  .repositories-page-compact {
-    zoom: 0.88;
-  }
-}
-
-@media (min-width: 1800px) {
-  .repositories-page-compact {
-    zoom: 0.86;
-  }
-}
-
 /* --- 滚动条 --- */
 ::-webkit-scrollbar {
   width: 8px;
