@@ -16,6 +16,7 @@ import type {
   GistRepositoryLibraryImportSummary,
   GitHubAuthState,
   GitHubUser,
+  GithubRecommendationPage,
   GithubRecommendationResponse,
   ReadmeFetchSummary,
   ReadingStatus,
@@ -180,6 +181,18 @@ export function useStarsWorkspace() {
   }, []);
 
   useEffect(() => {
+    if (taskProgress?.status !== 'succeeded') {
+      return undefined;
+    }
+
+    const completedProgress = taskProgress;
+    const timeoutId = window.setTimeout(() => {
+      setTaskProgress((current) => current === completedProgress ? null : current);
+    }, 6000);
+    return () => window.clearTimeout(timeoutId);
+  }, [taskProgress]);
+
+  useEffect(() => {
     selectedRepositoryIdRef.current = selectedRepositoryId;
   }, [selectedRepositoryId]);
 
@@ -337,13 +350,19 @@ export function useStarsWorkspace() {
     }
 
     try {
-      const response = await invoke<GithubRecommendationResponse>('list_github_recommendation_candidates', {
+      const page = await invoke<GithubRecommendationPage>('list_github_recommendation_candidates', {
         request: {
           accountId,
           limit: 12,
+          offset: 0,
         },
       });
-      setGithubRecommendationResponse(response.results.length > 0 ? response : null);
+      setGithubRecommendationResponse(page.results.length > 0 ? {
+        rationaleZh: page.rationaleZh,
+        queries: page.queries,
+        searchFailures: [],
+        results: page.results,
+      } : null);
       setGithubRecommendationError(null);
     } catch (reason) {
       setGithubRecommendationError(`推荐候选恢复失败：${toErrorMessage(reason)}`);
@@ -559,21 +578,19 @@ export function useStarsWorkspace() {
     }
   }
 
-  async function handleSyncStars(options?: { forceFull?: boolean; throwOnError?: boolean }) {
+  async function handleSyncStars(options?: { throwOnError?: boolean }) {
     setIsSyncingStars(true);
     setError(null);
     setAuthMessage(null);
     setTaskProgress(buildRunningTaskProgress('sync-stars', 'sync', '正在准备同步 GitHub Stars'));
 
     try {
-      const summary = await invoke<StarSyncSummary>('sync_github_stars', {
-        request: { forceFull: options?.forceFull ?? false },
-      });
+      const summary = await invoke<StarSyncSummary>('sync_github_stars');
       setSyncSummary(summary);
       setReadmeSummary(null);
       await refreshRepositoryWorkspace();
       setAuthMessage(
-        `同步完成：当前 ${summary.activeCount} 个，新增 ${summary.createdCount} 个，更新 ${summary.updatedCount} 个，移除 ${summary.removedCount} 个，扫描 ${summary.scannedCount} 个，模式 ${summary.mode === 'incremental' ? '增量' : '全量'}。`,
+        `同步完成：当前 ${summary.activeCount} 个，新增 ${summary.createdCount} 个，更新 ${summary.updatedCount} 个，移除 ${summary.removedCount} 个，扫描 ${summary.scannedCount} 个。`,
       );
     } catch (reason) {
       const message = toErrorMessage(reason);

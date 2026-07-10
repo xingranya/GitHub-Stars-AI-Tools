@@ -1,14 +1,12 @@
 import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { BrandIcon } from '@/components/ui/brand-icon';
 import { Icon } from '@/components/ui/icon';
-import type { GitHubUser, StarSyncSummary, TaskProgressEvent } from '@/types';
-
-type Page = 'dashboard' | 'repositories' | 'tag-network' | 'ai-search' | 'profile' | 'settings';
+import type { AppPage, GitHubUser, StarSyncSummary, TaskProgressEvent } from '@/types';
 
 type AppLayoutProps = {
   children: ReactNode;
-  currentPage: Page;
-  onNavigate: (page: Page) => void;
+  currentPage: AppPage;
+  onNavigate: (page: AppPage) => void;
   user: GitHubUser | null;
   onSyncStars: () => void;
   isSyncing: boolean;
@@ -31,9 +29,11 @@ type AppLayoutProps = {
   notificationOpenSignal: number;
 };
 
-const NAV_ITEMS: { key: Page; icon: string; label: string }[] = [
+const NAV_ITEMS: { key: AppPage; icon: string; label: string }[] = [
   { key: 'dashboard', icon: 'home', label: '概览' },
   { key: 'repositories', icon: 'folder_special', label: '全部仓库' },
+  { key: 'discover', icon: 'travel_explore', label: '发现' },
+  { key: 'rankings', icon: 'leaderboard', label: '排行榜' },
   { key: 'tag-network', icon: 'hub', label: '标签网络' },
   { key: 'ai-search', icon: 'psychology', label: 'AI 搜索' },
 ];
@@ -709,7 +709,7 @@ function TaskProgressCard(props: {
           )}
         </div>
       </div>
-      {(hasKnownProgress || isRunning) && (
+      {isRunning && (
         <div className="mt-3">
           <div className="h-1.5 overflow-hidden rounded-full bg-surface-container-high">
             {hasKnownProgress ? (
@@ -765,8 +765,6 @@ function getTaskStageLabel(stage: string) {
       return 'AI 分析';
     case 'partial-failure':
       return '部分失败';
-    case 'incremental-stop':
-      return '增量完成';
     case 'done':
       return '已完成';
     case 'error':
