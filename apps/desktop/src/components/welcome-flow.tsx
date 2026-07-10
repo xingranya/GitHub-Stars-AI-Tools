@@ -570,8 +570,6 @@ function getWelcomeTaskStageLabel(stage: string) {
       return 'AI 分析';
     case 'partial-failure':
       return '部分失败';
-    case 'incremental-stop':
-      return '增量完成';
     case 'done':
       return '已完成';
     case 'error':
