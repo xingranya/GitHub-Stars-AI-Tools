@@ -3,6 +3,7 @@ mod auth;
 mod github;
 mod ranking_query;
 mod storage;
+mod vector_index;
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -22,7 +23,9 @@ const TASK_PROGRESS_EVENT: &str = "task-progress";
 const AI_STREAM_EVENT: &str = "ai-stream";
 const README_FETCH_CONCURRENCY: usize = 6;
 const GITHUB_RECOMMENDATION_REFERENCE_LIMIT: usize = 8;
+const VECTOR_MODEL_VERSION: &str = "repository-knowledge-v1";
 const AI_API_KEY_SERVICE: &str = "github-stars-ai-tools";
+const EMBEDDING_API_KEY_ACCOUNT: &str = "embedding-api-key:openai-compatible";
 const AI_API_KEY_PROVIDER_ACCOUNTS: &[&str] = &[
     "ai-api-key:openai",
     "ai-api-key:openai-compatible",
@@ -581,7 +584,51 @@ struct SearchRepositoriesRequest {
     context_queries: Option<Vec<String>>,
     context_repository_ids: Option<Vec<String>>,
     ai_config: Option<ai::AiRequestConfig>,
+    embedding_config: Option<ai::EmbeddingRequestConfig>,
     request_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TestEmbeddingConnectionRequest {
+    embedding_config: ai::EmbeddingRequestConfig,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RebuildVectorIndexRequest {
+    account_id: String,
+    embedding_config: Option<ai::EmbeddingRequestConfig>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VectorIndexStatusRequest {
+    account_id: String,
+    embedding_config: Option<ai::EmbeddingRequestConfig>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VectorIndexBuildSummary {
+    total_count: usize,
+    indexed_count: usize,
+    restored_count: usize,
+    skipped_count: usize,
+    failed_count: usize,
+    failures: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VectorIndexStatusData {
+    enabled: bool,
+    model: Option<String>,
+    dimensions: Option<usize>,
+    sqlite_count: usize,
+    zvec_count: usize,
+    ready: bool,
+    message: String,
 }
 
 #[derive(Deserialize)]
@@ -993,6 +1040,25 @@ fn save_ai_api_key(provider: String, api_key: String) -> Result<(), String> {
     auth::save_secure_password(AI_API_KEY_SERVICE, &account, &api_key)
 }
 
+#[tauri::command]
+fn has_embedding_api_key() -> Result<bool, String> {
+    Ok(
+        auth::read_secure_password(AI_API_KEY_SERVICE, EMBEDDING_API_KEY_ACCOUNT)?
+            .as_deref()
+            .is_some_and(|api_key| !api_key.trim().is_empty()),
+    )
+}
+
+#[tauri::command]
+fn save_embedding_api_key(api_key: String) -> Result<(), String> {
+    auth::save_secure_password(AI_API_KEY_SERVICE, EMBEDDING_API_KEY_ACCOUNT, &api_key)
+}
+
+#[tauri::command]
+fn clear_embedding_api_key() -> Result<(), String> {
+    auth::delete_secure_password(AI_API_KEY_SERVICE, EMBEDDING_API_KEY_ACCOUNT)
+}
+
 fn read_ai_api_key_for_provider(provider: &str) -> Result<Option<String>, String> {
     let account = ai_api_key_account(provider)?;
     auth::read_secure_password(AI_API_KEY_SERVICE, &account)
@@ -1030,6 +1096,35 @@ fn hydrate_ai_request_config(
         }
     }
     Ok(config)
+}
+
+fn hydrate_embedding_request_config(
+    app_handle: &tauri::AppHandle,
+    config: Option<ai::EmbeddingRequestConfig>,
+) -> Result<Option<ai::EmbeddingRequestConfig>, String> {
+    let saved_config = load_saved_embedding_request_config(app_handle)?;
+    let Some(mut config) = config.or(saved_config) else {
+        return Ok(None);
+    };
+    if !config.enabled || config.provider.trim().eq_ignore_ascii_case("none") {
+        return Ok(None);
+    }
+    if config.api_key.trim().is_empty() {
+        let can_use_keyless_local = config
+            .provider
+            .trim()
+            .eq_ignore_ascii_case("openai-compatible")
+            && config.base_url.as_deref().is_some_and(is_local_ai_base_url);
+        match auth::read_secure_password(AI_API_KEY_SERVICE, EMBEDDING_API_KEY_ACCOUNT) {
+            Ok(Some(api_key)) if !api_key.trim().is_empty() => config.api_key = api_key,
+            Ok(_) => {}
+            Err(_) if can_use_keyless_local => {}
+            Err(error) => return Err(error),
+        }
+    }
+    config.max_results = config.max_results.clamp(1, 10);
+    config.min_score = config.min_score.clamp(0.0, 1.0);
+    Ok(Some(config))
 }
 
 fn can_use_ai_without_api_key(config: &ai::AiRequestConfig) -> bool {
@@ -1077,6 +1172,20 @@ fn load_saved_ai_request_config(
     Ok(ai_request_config_from_settings_value(&settings))
 }
 
+fn load_saved_embedding_request_config(
+    app_handle: &tauri::AppHandle,
+) -> Result<Option<ai::EmbeddingRequestConfig>, String> {
+    let settings_path = app_settings_path(app_handle)?;
+    if !settings_path.exists() {
+        return Ok(None);
+    }
+    let content =
+        fs::read_to_string(settings_path).map_err(|error| format!("应用设置读取失败：{error}"))?;
+    let settings = serde_json::from_str::<serde_json::Value>(&content)
+        .map_err(|error| format!("应用设置解析失败：{error}"))?;
+    Ok(embedding_request_config_from_settings_value(&settings))
+}
+
 fn merge_ai_request_config(
     config: Option<ai::AiRequestConfig>,
     saved_config: Option<&ai::AiRequestConfig>,
@@ -1116,6 +1225,40 @@ fn ai_request_config_from_settings_value(
     })
 }
 
+fn embedding_request_config_from_settings_value(
+    settings: &serde_json::Value,
+) -> Option<ai::EmbeddingRequestConfig> {
+    let embedding = settings.get("embedding")?.as_object()?;
+    let enabled = embedding
+        .get("enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let dimensions = embedding
+        .get("dimensions")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(1536);
+    let min_score = embedding
+        .get("minScore")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.72) as f32;
+    let max_results = embedding
+        .get("maxResults")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(8);
+    Some(ai::EmbeddingRequestConfig {
+        enabled,
+        provider: json_string_field(embedding, "provider").unwrap_or_else(|| "none".to_owned()),
+        api_key: String::new(),
+        base_url: json_string_field(embedding, "baseUrl").filter(|value| !value.trim().is_empty()),
+        model: json_string_field(embedding, "model").unwrap_or_default(),
+        dimensions,
+        min_score,
+        max_results,
+    })
+}
+
 fn json_string_field(
     object: &serde_json::Map<String, serde_json::Value>,
     key: &str,
@@ -1141,6 +1284,240 @@ fn clear_ai_api_key(provider: Option<String>) -> Result<(), String> {
         Some(_) => Ok(()),
         None => clear_all_ai_api_keys(),
     }
+}
+
+#[tauri::command]
+async fn test_embedding_connection(
+    app_handle: tauri::AppHandle,
+    request: TestEmbeddingConnectionRequest,
+) -> Result<ai::EmbeddingTestResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = hydrate_embedding_request_config(&app_handle, Some(request.embedding_config))?
+            .ok_or_else(|| "向量检索尚未启用".to_owned())?;
+        let result = ai::embed_text(&config, "GitHub Stars 本地知识库向量检索测试")?;
+        Ok(ai::EmbeddingTestResult {
+            model: result.model,
+            dimensions: result.vector.len(),
+        })
+    })
+    .await
+    .map_err(|error| format!("Embedding 配置测试执行失败：{error}"))?
+}
+
+#[tauri::command]
+async fn rebuild_vector_index(
+    app_handle: tauri::AppHandle,
+    request: RebuildVectorIndexRequest,
+) -> Result<VectorIndexBuildSummary, String> {
+    let progress_handle = app_handle.clone();
+    run_background_task_with_failure_progress(
+        "重建向量索引",
+        app_handle.clone(),
+        "rebuild-vector-index",
+        "vector-index",
+        move || rebuild_vector_index_worker(progress_handle, request),
+    )
+    .await
+}
+
+fn rebuild_vector_index_worker(
+    app_handle: tauri::AppHandle,
+    request: RebuildVectorIndexRequest,
+) -> Result<VectorIndexBuildSummary, String> {
+    let config = hydrate_embedding_request_config(&app_handle, request.embedding_config)?
+        .ok_or_else(|| "请先在设置中启用并配置向量检索".to_owned())?;
+    let storage = AppStorage::from_app_handle(&app_handle)?;
+    let candidates = storage.list_vector_index_candidates(
+        &request.account_id,
+        &config.model,
+        config.dimensions,
+        VECTOR_MODEL_VERSION,
+    )?;
+    let stored_embeddings = storage.list_stored_repository_embeddings(
+        &request.account_id,
+        &config.model,
+        config.dimensions,
+        VECTOR_MODEL_VERSION,
+    )?;
+    let stored_by_repo = stored_embeddings
+        .into_iter()
+        .map(|record| (record.repo_id.clone(), record))
+        .collect::<HashMap<_, _>>();
+    let index = vector_index::ZvecRepositoryIndex::from_app_handle(&app_handle)?;
+    index.reset_bucket(&request.account_id, &config.model, config.dimensions)?;
+    let mut summary = VectorIndexBuildSummary {
+        total_count: candidates.len(),
+        indexed_count: 0,
+        restored_count: 0,
+        skipped_count: 0,
+        failed_count: 0,
+        failures: Vec::new(),
+    };
+    emit_task_progress(
+        &app_handle,
+        TaskProgressEvent::running(
+            "rebuild-vector-index",
+            "vector-index",
+            "embedding",
+            0,
+            summary.total_count.max(1),
+            "正在生成并恢复仓库向量",
+            None,
+        ),
+    );
+
+    for (position, candidate) in candidates.into_iter().enumerate() {
+        let result =
+            if candidate.existing_source_hash.as_deref() == Some(candidate.source_hash.as_str()) {
+                if let Some(stored) = stored_by_repo.get(&candidate.repo_id) {
+                    index
+                        .upsert(&vector_index::RepositoryVectorRecord {
+                            account_id: stored.account_id.clone(),
+                            repo_id: stored.repo_id.clone(),
+                            source_hash: stored.source_hash.clone(),
+                            model: stored.model.clone(),
+                            vector: stored.vector.clone(),
+                        })
+                        .map(|_| "restored")
+                } else {
+                    Ok("missing")
+                }
+            } else {
+                Ok("missing")
+            }
+            .and_then(|state| {
+                if state == "restored" {
+                    return Ok(state);
+                }
+                let embedding = ai::embed_text(&config, &candidate.knowledge_text)?;
+                let record = storage::StoredRepositoryEmbedding {
+                    account_id: candidate.account_id.clone(),
+                    repo_id: candidate.repo_id.clone(),
+                    source_hash: candidate.source_hash.clone(),
+                    model: config.model.clone(),
+                    vector: embedding.vector,
+                };
+                storage.save_repository_embedding(&record, VECTOR_MODEL_VERSION)?;
+                index.upsert(&vector_index::RepositoryVectorRecord {
+                    account_id: record.account_id,
+                    repo_id: record.repo_id,
+                    source_hash: record.source_hash,
+                    model: record.model,
+                    vector: record.vector,
+                })?;
+                Ok("indexed")
+            });
+
+        match result {
+            Ok("restored") => summary.restored_count += 1,
+            Ok("indexed") => summary.indexed_count += 1,
+            Ok(_) => summary.skipped_count += 1,
+            Err(error) => {
+                summary.failed_count += 1;
+                if summary.failures.len() < 20 {
+                    summary
+                        .failures
+                        .push(format!("{}：{error}", candidate.full_name));
+                }
+            }
+        }
+        emit_task_progress(
+            &app_handle,
+            TaskProgressEvent::running(
+                "rebuild-vector-index",
+                "vector-index",
+                "embedding",
+                position + 1,
+                summary.total_count.max(1),
+                format!(
+                    "向量索引进度：新生成 {}，本地恢复 {}，失败 {}",
+                    summary.indexed_count, summary.restored_count, summary.failed_count
+                ),
+                Some(candidate.full_name),
+            ),
+        );
+    }
+
+    emit_task_progress(
+        &app_handle,
+        if summary.failed_count == 0 {
+            TaskProgressEvent::succeeded(
+                "rebuild-vector-index",
+                "vector-index",
+                summary.total_count,
+                summary.total_count,
+                format!(
+                    "向量索引完成：新生成 {}，本地恢复 {}",
+                    summary.indexed_count, summary.restored_count
+                ),
+            )
+        } else {
+            TaskProgressEvent::partial(
+                "rebuild-vector-index",
+                "vector-index",
+                summary.total_count,
+                summary.total_count,
+                format!(
+                    "向量索引部分完成：成功 {}，失败 {}",
+                    summary.indexed_count + summary.restored_count,
+                    summary.failed_count
+                ),
+            )
+        },
+    );
+    Ok(summary)
+}
+
+#[tauri::command]
+async fn get_vector_index_status(
+    app_handle: tauri::AppHandle,
+    request: VectorIndexStatusRequest,
+) -> Result<VectorIndexStatusData, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(config) = hydrate_embedding_request_config(&app_handle, request.embedding_config)?
+        else {
+            return Ok(VectorIndexStatusData {
+                enabled: false,
+                model: None,
+                dimensions: None,
+                sqlite_count: 0,
+                zvec_count: 0,
+                ready: false,
+                message: "向量检索尚未启用".to_owned(),
+            });
+        };
+        let storage = AppStorage::from_app_handle(&app_handle)?;
+        let sqlite_count = storage
+            .list_stored_repository_embeddings(
+                &request.account_id,
+                &config.model,
+                config.dimensions,
+                VECTOR_MODEL_VERSION,
+            )?
+            .len();
+        let index = vector_index::ZvecRepositoryIndex::from_app_handle(&app_handle)?;
+        let zvec_count = index
+            .count(&request.account_id, &config.model, config.dimensions)
+            .unwrap_or(0);
+        let ready = sqlite_count > 0 && zvec_count == sqlite_count;
+        Ok(VectorIndexStatusData {
+            enabled: true,
+            model: Some(config.model),
+            dimensions: Some(config.dimensions),
+            sqlite_count,
+            zvec_count,
+            ready,
+            message: if ready {
+                format!("向量索引可用，共 {zvec_count} 个仓库")
+            } else if sqlite_count > 0 {
+                "zvec 索引需要从 SQLite 恢复，请执行重建".to_owned()
+            } else {
+                "尚未生成仓库向量，请执行重建".to_owned()
+            },
+        })
+    })
+    .await
+    .map_err(|error| format!("读取向量索引状态失败：{error}"))?
 }
 
 #[tauri::command]
@@ -1185,7 +1562,17 @@ fn clear_app_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn clear_local_database(app_handle: tauri::AppHandle) -> Result<(), String> {
-    AppStorage::clear_local_database(&app_handle)
+    let database_result = AppStorage::clear_local_database(&app_handle);
+    let vector_result = vector_index::ZvecRepositoryIndex::from_app_handle(&app_handle)
+        .and_then(|index| index.reset_all());
+    match (database_result, vector_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(database_error), Ok(())) => Err(database_error),
+        (Ok(()), Err(vector_error)) => Err(vector_error),
+        (Err(database_error), Err(vector_error)) => Err(format!(
+            "本地数据库清理失败：{database_error}；向量索引清理失败：{vector_error}"
+        )),
+    }
 }
 
 fn app_settings_path(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -3356,20 +3743,39 @@ fn search_repositories_worker(
 ) -> Result<storage::AiSearchResponseData, String> {
     let storage = AppStorage::from_app_handle(&app_handle)?;
     let original_query = request.query.trim().to_owned();
+    if let Some(answer) = conversational_query_reply(&original_query) {
+        return Ok(storage::AiSearchResponseData {
+            query: original_query,
+            mode: "conversation".to_owned(),
+            results: Vec::new(),
+            total_count: 0,
+            context_queries_used: Vec::new(),
+            context_applied: false,
+            ai_enhanced: false,
+            ai_query: None,
+            ai_rationale_zh: Some("当前内容是对话问候，不应触发仓库召回。".to_owned()),
+            ai_error: None,
+            answer_zh: Some(answer),
+            retrieval_mode: "none".to_owned(),
+            vector_applied: false,
+            vector_error: None,
+        });
+    }
     let request_id = request
         .request_id
         .clone()
         .unwrap_or_else(|| format!("ai-search-{}", original_query));
     let context_queries = request.context_queries.unwrap_or_default();
     let context_repository_ids = request.context_repository_ids.unwrap_or_default();
-    let progress_total = if request.ai_config.is_some() { 3 } else { 2 };
+    let ai_config = request.ai_config.clone();
+    let progress_total = if ai_config.is_some() { 4 } else { 3 };
     emit_ai_stream_status(
         &app_handle,
         &request_id,
         "ai-search",
         "plan",
         "started",
-        if request.ai_config.is_some() {
+        if ai_config.is_some() {
             "正在理解你的搜索问题"
         } else {
             "正在准备本地知识搜索"
@@ -3384,7 +3790,7 @@ fn search_repositories_worker(
             "plan",
             0,
             progress_total,
-            if request.ai_config.is_some() {
+            if ai_config.is_some() {
                 "正在理解搜索问题并准备 AI 增强"
             } else {
                 "正在准备本地知识搜索"
@@ -3397,8 +3803,35 @@ fn search_repositories_worker(
         &request_id,
         original_query.clone(),
         &context_queries,
-        request.ai_config,
+        ai_config.clone(),
     )?;
+
+    emit_task_progress(
+        &app_handle,
+        TaskProgressEvent::running(
+            "ai-search",
+            "ai",
+            "vector",
+            progress_total.saturating_sub(2),
+            progress_total,
+            "正在执行向量召回与严格相关度过滤",
+            Some(original_query.clone()),
+        ),
+    );
+    let vector_search = match build_vector_search_scores(
+        &app_handle,
+        &storage,
+        &request.account_id,
+        &effective_query,
+        request.embedding_config,
+    ) {
+        Ok(result) => result,
+        Err(error) => VectorSearchOutcome {
+            scores: HashMap::new(),
+            error: Some(format!("向量检索已降级：{error}")),
+            max_results: 8,
+        },
+    };
 
     emit_task_progress(
         &app_handle,
@@ -3408,19 +3841,79 @@ fn search_repositories_worker(
             "analyze",
             progress_total.saturating_sub(1),
             progress_total,
-            "正在匹配本地 Stars、README、AI 摘要、标签和笔记",
+            "正在融合向量、Stars 元数据、README、AI 摘要、标签和笔记",
             Some(original_query.clone()),
         ),
     );
-    let response = storage.search_repositories(
-        &effective_query,
-        &context_queries,
-        &context_repository_ids,
-        request.limit.unwrap_or(20),
-        request.offset.unwrap_or(0),
-        Some(&request.account_id),
-        Some(metadata),
-    )?;
+    let mut response = storage.search_repositories(storage::RepositorySearchOptions {
+        query: &effective_query,
+        context_queries: &context_queries,
+        context_repository_ids: &context_repository_ids,
+        limit: request.limit.unwrap_or(vector_search.max_results),
+        offset: request.offset.unwrap_or(0),
+        max_results: vector_search.max_results,
+        account_id: Some(&request.account_id),
+        vector_scores: &vector_search.scores,
+        vector_error: vector_search.error,
+        metadata: Some(metadata),
+    })?;
+    let local_answer = build_local_search_answer(&original_query, &response);
+    response.answer_zh = Some(local_answer.clone());
+    if response.ai_enhanced && !response.results.is_empty() {
+        if let Some(config) = ai_config {
+            emit_ai_stream_status(
+                &app_handle,
+                &request_id,
+                "ai-search",
+                "answer",
+                "started",
+                "正在根据检索结果生成回答",
+                None,
+            );
+            let evidence = response
+                .results
+                .iter()
+                .map(|result| ai::AiSearchEvidence {
+                    repository_full_name: result.repository.full_name.clone(),
+                    description: result.repository.description.clone(),
+                    topics: result.repository.topics.clone(),
+                    summary_zh: result.ai_summary.clone(),
+                })
+                .collect::<Vec<_>>();
+            match hydrate_ai_request_config(&app_handle, Some(config))
+                .and_then(|config| ai::answer_search_results(&config, &original_query, &evidence))
+            {
+                Ok(answer) => {
+                    response.answer_zh = Some(answer);
+                    emit_ai_stream_status(
+                        &app_handle,
+                        &request_id,
+                        "ai-search",
+                        "answer",
+                        "finished",
+                        "已根据检索结果生成回答",
+                        None,
+                    );
+                }
+                Err(error) => {
+                    let answer_error = format!("AI 回答生成失败，已使用本地证据回答：{error}");
+                    response.ai_error = Some(match response.ai_error.take() {
+                        Some(existing) => format!("{existing}；{answer_error}"),
+                        None => answer_error.clone(),
+                    });
+                    emit_ai_stream_status(
+                        &app_handle,
+                        &request_id,
+                        "ai-search",
+                        "answer",
+                        "fallback",
+                        answer_error,
+                        None,
+                    );
+                }
+            }
+        }
+    }
     emit_ai_stream_status(
         &app_handle,
         &request_id,
@@ -3452,6 +3945,134 @@ fn search_repositories_worker(
     Ok(response)
 }
 
+fn conversational_query_reply(query: &str) -> Option<String> {
+    let normalized = query
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|character| !character.is_whitespace() && !"，。！？,.!?~～".contains(*character))
+        .collect::<String>();
+    let is_greeting = matches!(
+        normalized.as_str(),
+        "你好"
+            | "您好"
+            | "嗨"
+            | "哈喽"
+            | "hello"
+            | "hi"
+            | "hey"
+            | "谢谢"
+            | "感谢"
+            | "你是谁"
+            | "在吗"
+    );
+    is_greeting.then(|| {
+        "你好！这里用于精准查找你的 GitHub Stars。请描述你想找的项目能力，例如“支持离线缓存的 Rust HTTP 客户端”，我会最多返回 10 个高相关结果。".to_owned()
+    })
+}
+
+struct VectorSearchOutcome {
+    scores: HashMap<String, f64>,
+    error: Option<String>,
+    max_results: usize,
+}
+
+fn build_vector_search_scores(
+    app_handle: &tauri::AppHandle,
+    storage: &AppStorage,
+    account_id: &str,
+    query: &str,
+    embedding_config: Option<ai::EmbeddingRequestConfig>,
+) -> Result<VectorSearchOutcome, String> {
+    let Some(config) = hydrate_embedding_request_config(app_handle, embedding_config)? else {
+        return Ok(VectorSearchOutcome {
+            scores: HashMap::new(),
+            error: None,
+            max_results: 8,
+        });
+    };
+    let embedding = ai::embed_text(&config, query)?;
+    let index = vector_index::ZvecRepositoryIndex::from_app_handle(app_handle)?;
+    let request = vector_index::VectorSearchRequest {
+        account_id: account_id.to_owned(),
+        model: config.model.clone(),
+        vector: embedding.vector,
+        limit: config.max_results.saturating_mul(3).clamp(10, 30),
+        min_score: config.min_score,
+    };
+    let mut hits = index.search(&request);
+    let should_restore = hits.as_ref().is_err()
+        || (hits.as_ref().is_ok_and(Vec::is_empty)
+            && index
+                .count(account_id, &config.model, config.dimensions)
+                .unwrap_or(0)
+                == 0);
+    if should_restore {
+        let stored = storage.list_stored_repository_embeddings(
+            account_id,
+            &config.model,
+            config.dimensions,
+            VECTOR_MODEL_VERSION,
+        )?;
+        if !stored.is_empty() {
+            index.reset_bucket(account_id, &config.model, config.dimensions)?;
+            for record in stored {
+                index.upsert(&vector_index::RepositoryVectorRecord {
+                    account_id: record.account_id,
+                    repo_id: record.repo_id,
+                    source_hash: record.source_hash,
+                    model: record.model,
+                    vector: record.vector,
+                })?;
+            }
+            hits = index.search(&request);
+        }
+    }
+    let hits = hits?;
+    let scores = hits
+        .into_iter()
+        .map(|hit| (hit.repo_id, f64::from(hit.score)))
+        .collect::<HashMap<_, _>>();
+    let message = scores
+        .is_empty()
+        .then(|| "向量索引尚无达到阈值的候选，已使用严格关键词检索。".to_owned());
+    Ok(VectorSearchOutcome {
+        scores,
+        error: message,
+        max_results: config.max_results.clamp(1, 10),
+    })
+}
+
+fn build_local_search_answer(query: &str, response: &storage::AiSearchResponseData) -> String {
+    if response.results.is_empty() {
+        return format!(
+            "没有找到与“{query}”达到相关度门槛的仓库。可以补充技术栈、使用场景或关键能力后再试。"
+        );
+    }
+    let recommendations = response
+        .results
+        .iter()
+        .take(3)
+        .map(|result| {
+            let summary = result
+                .ai_summary
+                .as_deref()
+                .or(result.repository.description.as_deref())
+                .unwrap_or("暂无摘要");
+            format!(
+                "- {}：{}",
+                result.repository.full_name,
+                summary.chars().take(100).collect::<String>()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "为“{query}”筛选出 {} 个高相关仓库，优先建议：\n{}",
+        response.total_count, recommendations
+    )
+}
+
 fn build_ai_search_query(
     app_handle: &tauri::AppHandle,
     request_id: &str,
@@ -3470,6 +4091,13 @@ fn build_ai_search_query(
         return Ok((original_query, metadata));
     };
     if ai_config.provider.trim().eq_ignore_ascii_case("none") {
+        return Ok((original_query, metadata));
+    }
+    if is_short_exact_technical_query(&original_query) {
+        metadata.ai_enhanced = true;
+        metadata.ai_query = Some(original_query.clone());
+        metadata.ai_rationale_zh =
+            Some("短技术词使用完整词精确检索，避免 AI 扩写引入宽泛或无关候选。".to_owned());
         return Ok((original_query, metadata));
     }
 
@@ -3548,6 +4176,14 @@ fn build_ai_search_query(
             Ok((original_query, metadata))
         }
     }
+}
+
+fn is_short_exact_technical_query(query: &str) -> bool {
+    let normalized = query.trim();
+    (1..=3).contains(&normalized.len())
+        && normalized
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
 }
 
 #[tauri::command]
@@ -4622,6 +5258,12 @@ pub fn run() {
             has_ai_api_key,
             save_ai_api_key,
             clear_ai_api_key,
+            has_embedding_api_key,
+            save_embedding_api_key,
+            clear_embedding_api_key,
+            test_embedding_connection,
+            rebuild_vector_index,
+            get_vector_index_status,
             get_app_settings,
             save_app_settings,
             clear_app_settings,
@@ -4692,6 +5334,49 @@ mod tests {
         assert!(permissions.contains("\"list_personal_rankings\""));
         assert!(permissions.contains("\"fetch_github_ranking_readme\""));
         assert!(permissions.contains("\"star_github_ranking_repository\""));
+    }
+
+    #[test]
+    fn embedding_commands_are_allowed_by_main_capability() {
+        let permissions = include_str!("../permissions/gsat-commands.toml");
+
+        for command in [
+            "has_embedding_api_key",
+            "save_embedding_api_key",
+            "clear_embedding_api_key",
+            "test_embedding_connection",
+            "rebuild_vector_index",
+            "get_vector_index_status",
+        ] {
+            assert!(permissions.contains(&format!("\"{command}\"")));
+        }
+    }
+
+    #[test]
+    fn conversational_queries_do_not_trigger_repository_retrieval() {
+        for query in [
+            "你好",
+            "您好！",
+            " hello ",
+            "Hi?",
+            "谢谢",
+            "你是谁",
+            "在吗～",
+        ] {
+            let reply = conversational_query_reply(query).expect("问候语应直接返回对话答复");
+            assert!(reply.contains("最多返回 10 个"));
+        }
+        assert!(conversational_query_reply("找一个 Rust 向量数据库").is_none());
+    }
+
+    #[test]
+    fn short_technical_queries_keep_exact_semantics() {
+        for query in ["AI", "ai", "RAG", "UI", "Go"] {
+            assert!(is_short_exact_technical_query(query));
+        }
+        for query in ["OpenAI", "AI agent", "向量", "C++"] {
+            assert!(!is_short_exact_technical_query(query));
+        }
     }
 
     fn sync_states(values: &[(&str, &str)]) -> HashMap<String, String> {

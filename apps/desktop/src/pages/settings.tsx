@@ -8,14 +8,22 @@ import { AppUpdatePanel } from '@/components/app-update-panel';
 import { Icon } from '@/components/ui/icon';
 import {
   getAiConfigMessage,
+  getEmbeddingConfigMessage,
   isSavedAiApiKeyPlaceholder,
   shouldFlushAiApiKey,
+  shouldFlushEmbeddingApiKey,
   toBackendAiRequestConfig,
+  toBackendEmbeddingRequestConfig,
 } from '@/lib/ai-config';
 import { compactNumber } from '@/lib/format';
 import { COLOR_PRESETS } from '@/types-settings';
 import type { AiStreamEvent, DashboardStats, RuntimeReadinessCheckItem, RuntimeReadinessCheckResult } from '@/types';
-import type { AISettings as AISettingsValue, RuntimeSelfCheckRecord, ThemeSettings as ThemeSettingsValue } from '@/types-settings';
+import type {
+  AISettings as AISettingsValue,
+  EmbeddingSettings as EmbeddingSettingsValue,
+  RuntimeSelfCheckRecord,
+  ThemeSettings as ThemeSettingsValue,
+} from '@/types-settings';
 
 type SettingsTab = 'github' | 'ai' | 'general' | 'backup' | 'about';
 type AIProviderPreset = AISettingsValue['providerPreset'];
@@ -187,6 +195,30 @@ type AiTestDialogState = {
   tokensPerSecond: number | null;
   summary: string | null;
   error: string | null;
+};
+
+type EmbeddingConnectionTestResult = {
+  model: string;
+  dimensions: number;
+};
+
+type VectorIndexStatus = {
+  enabled: boolean;
+  model: string | null;
+  dimensions: number | null;
+  sqliteCount: number;
+  zvecCount: number;
+  ready: boolean;
+  message: string;
+};
+
+type VectorIndexBuildSummary = {
+  totalCount: number;
+  indexedCount: number;
+  restoredCount: number;
+  skippedCount: number;
+  failedCount: number;
+  failures: string[];
 };
 
 export function SettingsPage() {
@@ -965,6 +997,7 @@ function RuntimeCheckRow({ title, item }: { title: string; item: RuntimeReadines
 
 /* === AI 引擎设置 === */
 function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSettings> }) {
+  const workspace = useWorkspace();
   const ai = settingsHook.settings.ai;
   const needsRemoteConfig = ai.provider !== 'none';
   const hasSavedApiKey = isSavedAiApiKeyPlaceholder(ai.apiKey);
@@ -1467,6 +1500,10 @@ function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSe
         </div>
         </div>
       </section>
+      <EmbeddingSettingsPanel
+        accountId={workspace.authState.user ? String(workspace.authState.user.id) : null}
+        settingsHook={settingsHook}
+      />
       {testDialog?.isOpen && (
         <AiTestDialog
           state={testDialog}
@@ -1475,6 +1512,342 @@ function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSe
         />
       )}
     </>
+  );
+}
+
+function EmbeddingSettingsPanel({
+  accountId,
+  settingsHook,
+}: {
+  accountId: string | null;
+  settingsHook: ReturnType<typeof useAppSettings>;
+}) {
+  const embedding = settingsHook.settings.embedding;
+  const hasSavedApiKey = isSavedAiApiKeyPlaceholder(embedding.apiKey);
+  const [apiKeyDraft, setApiKeyDraft] = useState(hasSavedApiKey ? '' : embedding.apiKey);
+  const [isTesting, setIsTesting] = useState(false);
+  const [isRebuilding, setIsRebuilding] = useState(false);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(false);
+  const [status, setStatus] = useState<VectorIndexStatus | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const effectiveApiKey = apiKeyDraft.trim() ? apiKeyDraft : embedding.apiKey;
+  const effectiveEmbedding = { ...embedding, apiKey: effectiveApiKey };
+  const configMessage = getEmbeddingConfigMessage(effectiveEmbedding);
+  const canUseEmbedding = Boolean(accountId && !configMessage);
+  const keySaveMessage = getAiKeySaveMessage(settingsHook.embeddingKeySaveStatus);
+
+  useEffect(() => {
+    setApiKeyDraft(isSavedAiApiKeyPlaceholder(embedding.apiKey) ? '' : embedding.apiKey);
+  }, [embedding.apiKey]);
+
+  useEffect(() => {
+    setStatus(null);
+    setMessage(null);
+  }, [accountId, embedding.enabled, embedding.provider, embedding.baseUrl, embedding.model, embedding.dimensions]);
+
+  async function persistEmbeddingKey() {
+    if (shouldFlushEmbeddingApiKey(effectiveEmbedding)) {
+      await settingsHook.flushEmbeddingKey(effectiveApiKey);
+    }
+  }
+
+  async function loadStatus() {
+    if (!accountId) {
+      setMessage({ type: 'error', text: '请先连接 GitHub 账号并同步 Stars。' });
+      return;
+    }
+    setIsLoadingStatus(true);
+    try {
+      await persistEmbeddingKey();
+      const result = await invoke<VectorIndexStatus>('get_vector_index_status', {
+        request: {
+          accountId,
+          embeddingConfig: embedding.enabled
+            ? toBackendEmbeddingRequestConfig(effectiveEmbedding)
+            : null,
+        },
+      });
+      setStatus(result);
+      setMessage(null);
+    } catch (error) {
+      setMessage({ type: 'error', text: toErrorMessage(error) });
+    } finally {
+      setIsLoadingStatus(false);
+    }
+  }
+
+  async function handleTestConnection() {
+    if (configMessage) {
+      setMessage({ type: 'error', text: configMessage });
+      return;
+    }
+    setIsTesting(true);
+    setMessage(null);
+    try {
+      await persistEmbeddingKey();
+      const result = await invoke<EmbeddingConnectionTestResult>('test_embedding_connection', {
+        request: { embeddingConfig: toBackendEmbeddingRequestConfig(effectiveEmbedding) },
+      });
+      setMessage({
+        type: 'success',
+        text: `Embedding 服务可用：${result.model} 返回 ${result.dimensions} 维向量。`,
+      });
+    } catch (error) {
+      setMessage({ type: 'error', text: toErrorMessage(error) });
+    } finally {
+      setIsTesting(false);
+    }
+  }
+
+  async function handleRebuildIndex() {
+    if (!accountId) {
+      setMessage({ type: 'error', text: '请先连接 GitHub 账号并同步 Stars。' });
+      return;
+    }
+    if (configMessage) {
+      setMessage({ type: 'error', text: configMessage });
+      return;
+    }
+    setIsRebuilding(true);
+    setMessage(null);
+    try {
+      await persistEmbeddingKey();
+      const result = await invoke<VectorIndexBuildSummary>('rebuild_vector_index', {
+        request: {
+          accountId,
+          embeddingConfig: toBackendEmbeddingRequestConfig(effectiveEmbedding),
+        },
+      });
+      const succeeded = result.indexedCount + result.restoredCount;
+      setMessage({
+        type: result.failedCount > 0 ? 'error' : 'success',
+        text: result.failedCount > 0
+          ? `向量索引已处理 ${result.totalCount} 个仓库，成功 ${succeeded} 个，失败 ${result.failedCount} 个。${result.failures[0] ? ` 首个错误：${result.failures[0]}` : ''}`
+          : `向量索引已就绪：新生成 ${result.indexedCount} 个，从 SQLite 恢复 ${result.restoredCount} 个。`,
+      });
+      await loadStatus();
+    } catch (error) {
+      setMessage({ type: 'error', text: toErrorMessage(error) });
+    } finally {
+      setIsRebuilding(false);
+    }
+  }
+
+  async function handleClearSavedKey() {
+    setApiKeyDraft('');
+    await settingsHook.updateEmbedding({ apiKey: '' });
+    setMessage({ type: 'success', text: '已清除保存的 Embedding API Key。' });
+  }
+
+  return (
+    <section className="glass-panel rounded-xl p-6">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="font-headline-md text-[20px] font-semibold text-on-surface">向量检索</h3>
+          <p className="mt-1 max-w-3xl font-body-md text-sm text-on-surface-variant">
+            使用独立的 Embedding 服务生成仓库向量，并由本机 zvec 索引完成语义召回。仓库笔记不会发送到远程服务。
+          </p>
+        </div>
+        <ToggleSwitch
+          checked={embedding.enabled}
+          onChange={(checked) => void settingsHook.updateEmbedding({
+            enabled: checked,
+            provider: checked && embedding.provider === 'none' ? 'openai' : embedding.provider,
+            baseUrl: checked && embedding.provider === 'none' ? 'https://api.openai.com/v1' : embedding.baseUrl,
+          })}
+        />
+      </div>
+
+      <div className="space-y-5 border-t border-card-border pt-5">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label className="grid gap-2 font-body-md text-sm font-medium text-on-surface">
+            Embedding 服务
+            <select
+              value={embedding.provider}
+              onChange={(event) => {
+                const provider = event.target.value as EmbeddingSettingsValue['provider'];
+                void settingsHook.updateEmbedding({
+                  provider,
+                  enabled: provider !== 'none' && embedding.enabled,
+                  baseUrl: provider === 'openai'
+                    ? 'https://api.openai.com/v1'
+                    : provider === 'none'
+                      ? ''
+                      : embedding.baseUrl,
+                });
+              }}
+              disabled={!embedding.enabled}
+              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-body-md text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            >
+              <option value="openai">OpenAI</option>
+              <option value="openai-compatible">OpenAI 兼容接口</option>
+              <option value="none">不使用向量检索</option>
+            </select>
+          </label>
+          <label className="grid gap-2 font-body-md text-sm font-medium text-on-surface">
+            请求地址
+            <input
+              type="url"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={embedding.baseUrl}
+              onChange={(event) => void settingsHook.updateEmbedding({ baseUrl: event.target.value })}
+              disabled={!embedding.enabled}
+              placeholder="https://api.openai.com/v1"
+              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-body-md text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label className="grid gap-2 font-body-md text-sm font-medium text-on-surface">
+            API Key
+            <input
+              type="password"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={apiKeyDraft}
+              onChange={(event) => setApiKeyDraft(event.target.value)}
+              onBlur={() => void persistEmbeddingKey().catch(() => undefined)}
+              disabled={!embedding.enabled}
+              placeholder={hasSavedApiKey ? '已保存，输入新 Key 可替换' : '输入 Embedding API Key'}
+              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-body-md text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            />
+            <span className="font-body-md text-xs font-normal text-on-surface-variant">
+              {embedding.provider === 'openai-compatible'
+                ? '本机兼容服务可留空；填写后仅保存到系统凭据管理器。'
+                : '仅保存到系统凭据管理器，不写入设置文件。'}
+            </span>
+            {hasSavedApiKey && !apiKeyDraft.trim() && (
+              <button
+                type="button"
+                onClick={() => void handleClearSavedKey()}
+                className="w-fit rounded-lg border border-card-border bg-surface-container-high px-3 py-1.5 font-body-md text-xs font-normal text-on-surface transition-colors hover:bg-surface-container-highest"
+              >
+                清除已保存 Key
+              </button>
+            )}
+            {keySaveMessage && (
+              <span className={`font-body-md text-xs font-normal ${settingsHook.embeddingKeySaveStatus === 'error' ? 'text-error' : 'text-on-surface-variant'}`}>
+                {keySaveMessage}
+              </span>
+            )}
+          </label>
+          <label className="grid gap-2 font-body-md text-sm font-medium text-on-surface">
+            模型 ID
+            <input
+              type="text"
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={embedding.model}
+              onChange={(event) => void settingsHook.updateEmbedding({ model: event.target.value })}
+              disabled={!embedding.enabled}
+              placeholder="text-embedding-3-small"
+              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-body-md text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <label className="grid gap-2 font-body-md text-sm font-medium text-on-surface">
+            向量维度
+            <input
+              type="number"
+              min={1}
+              max={8192}
+              step={1}
+              value={embedding.dimensions}
+              onChange={(event) => void settingsHook.updateEmbedding({ dimensions: Number(event.target.value) })}
+              disabled={!embedding.enabled}
+              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-body-md text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            />
+          </label>
+          <label className="grid gap-2 font-body-md text-sm font-medium text-on-surface">
+            最低相似度
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.01}
+              value={embedding.minScore}
+              onChange={(event) => void settingsHook.updateEmbedding({ minScore: Number(event.target.value) })}
+              disabled={!embedding.enabled}
+              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-body-md text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            />
+          </label>
+          <label className="grid gap-2 font-body-md text-sm font-medium text-on-surface">
+            最大结果数
+            <input
+              type="number"
+              min={1}
+              max={10}
+              step={1}
+              value={embedding.maxResults}
+              onChange={(event) => void settingsHook.updateEmbedding({ maxResults: Number(event.target.value) })}
+              disabled={!embedding.enabled}
+              className="rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-body-md text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            />
+          </label>
+        </div>
+
+        <div className="rounded-lg border border-card-border bg-surface-container-low px-4 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="font-body-md text-sm font-medium text-on-surface">
+                {status?.message ?? (embedding.enabled ? '可测试连接并检查本机索引状态。' : '启用后可生成并使用语义向量。')}
+              </p>
+              {status?.enabled && (
+                <p className="mt-1 font-body-md text-xs text-on-surface-variant">
+                  SQLite 向量 {status.sqliteCount} 个 · zvec 索引 {status.zvecCount} 个 · {status.model} / {status.dimensions} 维
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleTestConnection()}
+                disabled={!canUseEmbedding || isTesting || isRebuilding}
+                className="rounded-lg border border-card-border bg-surface-container-high px-3 py-2 font-body-md text-sm text-on-surface transition-colors hover:bg-surface-container-highest disabled:opacity-60"
+              >
+                {isTesting ? '测试中…' : '测试连接'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadStatus()}
+                disabled={!accountId || isLoadingStatus || isRebuilding}
+                className="rounded-lg border border-card-border bg-surface-container-high px-3 py-2 font-body-md text-sm text-on-surface transition-colors hover:bg-surface-container-highest disabled:opacity-60"
+              >
+                {isLoadingStatus ? '检查中…' : '检查状态'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleRebuildIndex()}
+                disabled={!canUseEmbedding || isTesting || isRebuilding}
+                className="gsat-primary-button rounded-lg bg-primary px-3 py-2 font-body-md text-sm font-medium text-white transition-colors hover:bg-primary-container disabled:opacity-60"
+              >
+                {isRebuilding ? '重建中…' : '重建索引'}
+              </button>
+            </div>
+          </div>
+          {!canUseEmbedding && (
+            <p className="mt-3 font-body-md text-xs text-on-surface-variant">
+              {accountId ? configMessage : '请先连接 GitHub 账号并同步 Stars。'}
+            </p>
+          )}
+          {message && (
+            <p className={`mt-3 rounded-lg border px-3 py-2 font-body-md text-sm ${message.type === 'success' ? 'border-success/20 bg-success/10 text-success' : 'border-error/20 bg-error/10 text-error'}`}>
+              {message.text}
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

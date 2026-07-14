@@ -3,6 +3,7 @@ use crate::github::{GitHubRepositoryRecommendation, ReadmeDocument, StarredRepos
 use crate::ranking_query::personal_ranking_order_clause;
 use rusqlite::{types::ValueRef, Connection};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -603,6 +604,50 @@ struct SearchRepositoryRow {
     suggested_tags_json: Option<String>,
     readme_excerpt: Option<String>,
     tag_names_json: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct VectorIndexCandidate {
+    pub account_id: String,
+    pub repo_id: String,
+    pub full_name: String,
+    pub source_hash: String,
+    pub knowledge_text: String,
+    pub existing_source_hash: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StoredRepositoryEmbedding {
+    pub account_id: String,
+    pub repo_id: String,
+    pub source_hash: String,
+    pub model: String,
+    pub vector: Vec<f32>,
+}
+
+#[derive(Deserialize)]
+struct VectorIndexCandidateRow {
+    account_id: String,
+    repo_id: String,
+    full_name: String,
+    description: Option<String>,
+    language: Option<String>,
+    topics_json: String,
+    summary_zh: Option<String>,
+    keywords_json: Option<String>,
+    suggested_tags_json: Option<String>,
+    readme_excerpt: Option<String>,
+    tag_names_json: String,
+    existing_source_hash: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct StoredRepositoryEmbeddingRow {
+    account_id: String,
+    repo_id: String,
+    source_hash: String,
+    model: String,
+    vector_json: String,
 }
 
 impl AppStorage {
@@ -3175,14 +3220,20 @@ ON CONFLICT(repo_id) DO UPDATE SET
 
     pub fn search_repositories(
         &self,
-        query: &str,
-        context_queries: &[String],
-        context_repository_ids: &[String],
-        limit: usize,
-        offset: usize,
-        account_id: Option<&str>,
-        metadata: Option<AiSearchMetadata>,
+        options: RepositorySearchOptions<'_>,
     ) -> Result<AiSearchResponseData, String> {
+        let RepositorySearchOptions {
+            query,
+            context_queries,
+            context_repository_ids,
+            limit,
+            offset,
+            max_results,
+            account_id,
+            vector_scores,
+            vector_error,
+            metadata,
+        } = options;
         let normalized_query = query.trim();
         let metadata = metadata.unwrap_or_else(|| AiSearchMetadata {
             original_query: normalized_query.to_owned(),
@@ -3203,6 +3254,10 @@ ON CONFLICT(repo_id) DO UPDATE SET
                 ai_query: metadata.ai_query,
                 ai_rationale_zh: metadata.ai_rationale_zh,
                 ai_error: metadata.ai_error,
+                answer_zh: None,
+                retrieval_mode: "keyword".to_owned(),
+                vector_applied: false,
+                vector_error,
             });
         }
 
@@ -3272,20 +3327,17 @@ ORDER BY r.starred_at DESC;
             .collect::<HashSet<_>>();
         let context_tokens = tokenize_query(&context_text);
         let query_tokens = tokenize_query(normalized_query);
-        let mut tokens = query_tokens.clone();
-        for token in &context_tokens {
-            push_unique(&mut tokens, token);
-        }
         let mut results = rows
             .into_iter()
             .filter_map(|row| {
+                let vector_score = vector_scores.get(&row.id).copied();
                 score_search_row(
                     row,
                     normalized_query,
                     &query_tokens,
                     &context_tokens,
-                    &tokens,
                     &context_repository_set,
+                    vector_score,
                 )
                 .transpose()
             })
@@ -3297,14 +3349,20 @@ ORDER BY r.starred_at DESC;
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| b.repository.stars_count.cmp(&a.repository.stars_count))
         });
+        results.truncate(max_results.clamp(1, 10));
         let total_count = results.len();
-        let page_limit = limit.clamp(1, 100);
+        let page_limit = limit.clamp(1, 10);
         results = results.into_iter().skip(offset).take(page_limit).collect();
         let context_applied = results.iter().any(search_result_uses_context);
+        let vector_applied = results.iter().any(search_result_uses_vector);
 
         Ok(AiSearchResponseData {
             query: metadata.original_query,
-            mode: if metadata.ai_enhanced {
+            mode: if vector_applied && metadata.ai_enhanced {
+                "hybrid".to_owned()
+            } else if vector_applied {
+                "vector".to_owned()
+            } else if metadata.ai_enhanced {
                 "ai_enhanced".to_owned()
             } else {
                 "local_knowledge".to_owned()
@@ -3317,7 +3375,167 @@ ORDER BY r.starred_at DESC;
             ai_query: metadata.ai_query,
             ai_rationale_zh: metadata.ai_rationale_zh,
             ai_error: metadata.ai_error,
+            answer_zh: None,
+            retrieval_mode: if vector_applied {
+                "vector+keyword".to_owned()
+            } else {
+                "keyword".to_owned()
+            },
+            vector_applied,
+            vector_error,
         })
+    }
+
+    pub fn list_vector_index_candidates(
+        &self,
+        account_id: &str,
+        model: &str,
+        dimensions: usize,
+        model_version: &str,
+    ) -> Result<Vec<VectorIndexCandidate>, String> {
+        let sql = format!(
+            r#"
+.mode json
+SELECT
+  r.account_id,
+  r.id AS repo_id,
+  r.full_name,
+  r.description,
+  r.language,
+  r.topics_json,
+  ai.summary_zh,
+  ai.keywords_json,
+  ai.suggested_tags_json,
+  SUBSTR(rr.raw_markdown, 1, 12000) AS readme_excerpt,
+  COALESCE(json_group_array(t.name) FILTER (WHERE t.name IS NOT NULL), '[]') AS tag_names_json,
+  e.source_hash AS existing_source_hash
+FROM repositories r
+LEFT JOIN repo_readmes rr ON rr.repo_id = r.id
+LEFT JOIN repo_ai_documents ai ON ai.repo_id = r.id
+LEFT JOIN repo_tags rt ON rt.repo_id = r.id
+LEFT JOIN tags t ON t.id = rt.tag_id AND t.account_id = r.account_id
+LEFT JOIN repo_embeddings e
+  ON e.repo_id = r.id
+  AND e.source_kind = 'repository_knowledge'
+  AND e.model = {model}
+  AND e.model_version = {model_version}
+  AND e.dimensions = {dimensions}
+WHERE r.sync_status = 'active'
+  AND r.account_id = {account_id}
+GROUP BY r.id
+ORDER BY r.starred_at DESC;
+"#,
+            account_id = sql_text(account_id),
+            model = sql_text(model),
+            model_version = sql_text(model_version),
+        );
+        let rows = parse_json_rows::<VectorIndexCandidateRow>(
+            &self.query_sql(&sql)?,
+            "SQLite 向量候选解析失败",
+        )?;
+        rows.into_iter().map(build_vector_index_candidate).collect()
+    }
+
+    pub fn save_repository_embedding(
+        &self,
+        record: &StoredRepositoryEmbedding,
+        model_version: &str,
+    ) -> Result<(), String> {
+        if record.vector.is_empty() || record.vector.iter().any(|value| !value.is_finite()) {
+            return Err("不能保存空向量或包含无效数值的向量".to_owned());
+        }
+        let vector_json = serde_json::to_string(&record.vector)
+            .map_err(|error| format!("仓库向量序列化失败：{error}"))?;
+        let timestamp = self.current_database_timestamp()?;
+        let sql = format!(
+            r#"
+INSERT INTO repo_embeddings (
+  repo_id,
+  source_kind,
+  source_hash,
+  model,
+  model_version,
+  dimensions,
+  vector_json,
+  generated_at
+)
+VALUES (
+  {repo_id},
+  'repository_knowledge',
+  {source_hash},
+  {model},
+  {model_version},
+  {dimensions},
+  {vector_json},
+  {timestamp}
+)
+ON CONFLICT(repo_id, source_kind, model, model_version) DO UPDATE SET
+  source_hash = excluded.source_hash,
+  dimensions = excluded.dimensions,
+  vector_json = excluded.vector_json,
+  generated_at = excluded.generated_at;
+"#,
+            repo_id = sql_text(&record.repo_id),
+            source_hash = sql_text(&record.source_hash),
+            model = sql_text(&record.model),
+            model_version = sql_text(model_version),
+            dimensions = record.vector.len(),
+            vector_json = sql_text(&vector_json),
+            timestamp = sql_text(&timestamp),
+        );
+        self.execute_sql(&sql)
+    }
+
+    pub fn list_stored_repository_embeddings(
+        &self,
+        account_id: &str,
+        model: &str,
+        dimensions: usize,
+        model_version: &str,
+    ) -> Result<Vec<StoredRepositoryEmbedding>, String> {
+        let sql = format!(
+            r#"
+.mode json
+SELECT
+  r.account_id,
+  e.repo_id,
+  e.source_hash,
+  e.model,
+  e.vector_json
+FROM repo_embeddings e
+JOIN repositories r ON r.id = e.repo_id
+WHERE r.sync_status = 'active'
+  AND r.account_id = {account_id}
+  AND e.source_kind = 'repository_knowledge'
+  AND e.model = {model}
+  AND e.model_version = {model_version}
+  AND e.dimensions = {dimensions}
+ORDER BY e.repo_id;
+"#,
+            account_id = sql_text(account_id),
+            model = sql_text(model),
+            model_version = sql_text(model_version),
+        );
+        let rows = parse_json_rows::<StoredRepositoryEmbeddingRow>(
+            &self.query_sql(&sql)?,
+            "SQLite 仓库向量解析失败",
+        )?;
+        rows.into_iter()
+            .map(|row| {
+                let vector = serde_json::from_str::<Vec<f32>>(&row.vector_json)
+                    .map_err(|error| format!("仓库 {} 向量解析失败：{error}", row.repo_id))?;
+                if vector.len() != dimensions || vector.iter().any(|value| !value.is_finite()) {
+                    return Err(format!("仓库 {} 的向量维度或数值无效", row.repo_id));
+                }
+                Ok(StoredRepositoryEmbedding {
+                    account_id: row.account_id,
+                    repo_id: row.repo_id,
+                    source_hash: row.source_hash,
+                    model: row.model,
+                    vector,
+                })
+            })
+            .collect()
     }
 
     fn migrate(&self) -> Result<(), String> {
@@ -3579,6 +3797,10 @@ pub struct AiSearchResponseData {
     pub ai_query: Option<String>,
     pub ai_rationale_zh: Option<String>,
     pub ai_error: Option<String>,
+    pub answer_zh: Option<String>,
+    pub retrieval_mode: String,
+    pub vector_applied: bool,
+    pub vector_error: Option<String>,
 }
 
 pub struct AiSearchMetadata {
@@ -3587,6 +3809,19 @@ pub struct AiSearchMetadata {
     pub ai_query: Option<String>,
     pub ai_rationale_zh: Option<String>,
     pub ai_error: Option<String>,
+}
+
+pub struct RepositorySearchOptions<'a> {
+    pub query: &'a str,
+    pub context_queries: &'a [String],
+    pub context_repository_ids: &'a [String],
+    pub limit: usize,
+    pub offset: usize,
+    pub max_results: usize,
+    pub account_id: Option<&'a str>,
+    pub vector_scores: &'a HashMap<String, f64>,
+    pub vector_error: Option<String>,
+    pub metadata: Option<AiSearchMetadata>,
 }
 
 #[derive(Serialize)]
@@ -3728,13 +3963,55 @@ fn build_repository_filter_clause(filters: &RepositoryListFilters<'_>) -> String
     clauses.join(" AND ")
 }
 
+fn build_vector_index_candidate(
+    row: VectorIndexCandidateRow,
+) -> Result<VectorIndexCandidate, String> {
+    let topics = parse_json_string_array(&row.topics_json, "SQLite 向量候选 Topics 解析失败")?;
+    let keywords = parse_optional_json_array(row.keywords_json.as_deref())?;
+    let suggested_tags = parse_optional_json_array(row.suggested_tags_json.as_deref())?;
+    let tag_names =
+        parse_json_string_array(&row.tag_names_json, "SQLite 向量候选个人标签解析失败")?;
+    let knowledge_text = [
+        Some(format!("仓库：{}", row.full_name)),
+        row.description
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| format!("描述：{value}")),
+        row.language
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| format!("语言：{value}")),
+        (!topics.is_empty()).then(|| format!("Topics：{}", topics.join("、"))),
+        row.summary_zh
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| format!("AI 摘要：{value}")),
+        (!keywords.is_empty()).then(|| format!("关键词：{}", keywords.join("、"))),
+        (!suggested_tags.is_empty()).then(|| format!("建议标签：{}", suggested_tags.join("、"))),
+        (!tag_names.is_empty()).then(|| format!("个人标签：{}", tag_names.join("、"))),
+        row.readme_excerpt
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| format!("README：{value}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source_hash = format!("{:x}", Sha256::digest(knowledge_text.as_bytes()));
+    Ok(VectorIndexCandidate {
+        account_id: row.account_id,
+        repo_id: row.repo_id,
+        full_name: row.full_name,
+        source_hash,
+        knowledge_text,
+        existing_source_hash: row.existing_source_hash,
+    })
+}
+
 fn score_search_row(
     row: SearchRepositoryRow,
     query: &str,
     query_tokens: &[String],
     context_tokens: &[String],
-    tokens: &[String],
     context_repository_ids: &HashSet<&str>,
+    vector_score: Option<f64>,
 ) -> Result<Option<AiSearchResultData>, String> {
     let topics = serde_json::from_str::<Vec<String>>(&row.topics_json)
         .map_err(|error| format!("SQLite topics_json 解析失败：{error}"))?;
@@ -3771,80 +4048,119 @@ fn score_search_row(
         ),
     ];
 
-    let mut score = 0.0_f64;
+    const MIN_LEXICAL_SCORE: f64 = 18.0;
+    let mut lexical_score = 0.0_f64;
+    let mut context_score = 0.0_f64;
     let mut reasons = Vec::new();
     let mut matched_keywords = Vec::new();
     let mut used_context_match = false;
     let lower_query = query.to_lowercase();
     let is_previous_result = context_repository_ids.contains(row.id.as_str());
 
-    if is_previous_result {
-        score += 14.0;
-        used_context_match = true;
-        reasons.push(SearchMatchReasonData {
-            label: "上一轮结果命中".to_owned(),
-            detail: "该仓库来自本轮对话的上一轮搜索结果".to_owned(),
-        });
-    }
-
-    for token in tokens {
-        let token_lower = token.to_lowercase();
-        let is_context_only_token =
-            contains_token(context_tokens, token) && !contains_token(query_tokens, token);
+    for token in query_tokens {
         for (label, value, weight) in &fields {
-            let value_lower = value.to_lowercase();
-            if value_lower.contains(&token_lower) {
-                score += weight;
+            if find_search_term_byte_index(value, token).is_some() {
+                lexical_score += weight;
                 push_unique(&mut matched_keywords, token);
-                if is_context_only_token {
-                    used_context_match = true;
-                }
                 if reasons.len() < 5 {
-                    let reason_label = if is_context_only_token {
-                        format!("上下文{label}命中")
-                    } else {
-                        format!("{label}命中")
-                    };
-                    let detail = if is_context_only_token {
-                        format!("本轮上下文“{token}”在{label}中命中")
-                    } else {
-                        format!("{label}包含“{token}”")
-                    };
                     reasons.push(SearchMatchReasonData {
-                        label: reason_label,
-                        detail,
+                        label: format!("{label}命中"),
+                        detail: format!("{label}包含“{token}”"),
                     });
-                } else if is_context_only_token && !reasons.iter().any(is_context_reason) {
-                    let last_index = reasons.len() - 1;
-                    reasons[last_index] = SearchMatchReasonData {
-                        label: format!("上下文{label}命中"),
-                        detail: format!("本轮上下文“{token}”在{label}中命中"),
-                    };
                 }
                 break;
             }
         }
     }
 
-    if row.full_name.to_lowercase().contains(&lower_query) {
-        score += 20.0;
+    let full_name_query_match = find_search_term_byte_index(&row.full_name, &lower_query).is_some();
+    if full_name_query_match {
+        lexical_score += 20.0;
     }
-    if row
-        .summary_zh
-        .as_deref()
-        .unwrap_or_default()
-        .to_lowercase()
-        .contains(&lower_query)
-    {
-        score += 18.0;
+    let summary_query_match =
+        find_search_term_byte_index(row.summary_zh.as_deref().unwrap_or_default(), &lower_query)
+            .is_some();
+    if summary_query_match {
+        lexical_score += 18.0;
     }
 
-    if score <= 0.0 {
+    let vector_score =
+        vector_score.filter(|score| score.is_finite() && (0.0..=1.0).contains(score));
+    let required_token_matches = match query_tokens.len() {
+        0 | 1 => 1,
+        2..=4 => 2,
+        _ => 3,
+    };
+    let has_direct_match = lexical_score >= MIN_LEXICAL_SCORE
+        && (matched_keywords.len() >= required_token_matches
+            || full_name_query_match
+            || summary_query_match);
+    let requires_exact_lexical_match = is_short_ascii_search_term(query);
+    if !has_direct_match && (vector_score.is_none() || requires_exact_lexical_match) {
         return Ok(None);
     }
 
+    if let Some(vector_score) = vector_score {
+        reasons.insert(
+            0,
+            SearchMatchReasonData {
+                label: "语义相似命中".to_owned(),
+                detail: format!("向量相似度为 {:.0}%", vector_score * 100.0),
+            },
+        );
+        reasons.truncate(5);
+    }
+
+    for token in context_tokens {
+        if contains_token(query_tokens, token) {
+            continue;
+        }
+        for (label, value, weight) in &fields {
+            if find_search_term_byte_index(value, token).is_some() {
+                context_score += *weight * 0.2;
+                used_context_match = true;
+                if !reasons.iter().any(is_context_reason) {
+                    if reasons.len() >= 5 {
+                        reasons.pop();
+                    }
+                    reasons.push(SearchMatchReasonData {
+                        label: format!("上下文{label}命中"),
+                        detail: format!("本轮上下文“{token}”在{label}中命中"),
+                    });
+                }
+                break;
+            }
+        }
+    }
+    context_score = context_score.min(12.0);
+    if is_previous_result {
+        context_score += 6.0;
+        used_context_match = true;
+        if !reasons
+            .iter()
+            .any(|reason| reason.label == "上一轮结果命中")
+        {
+            if reasons.len() >= 5 {
+                reasons.pop();
+            }
+            reasons.push(SearchMatchReasonData {
+                label: "上一轮结果命中".to_owned(),
+                detail: "该仓库来自本轮对话的上一轮搜索结果，并且本轮仍有直接或语义命中".to_owned(),
+            });
+        }
+    }
+
+    let mut score = if let Some(vector_score) = vector_score {
+        lexical_score.min(80.0) * 0.55 + vector_score * 100.0 * 0.45
+    } else {
+        lexical_score
+    };
+    score += context_score;
+
     let explanation_zh = if let Some(summary) = row.summary_zh.as_deref() {
-        let prefix = if used_context_match {
+        let prefix = if vector_score.is_some() {
+            "根据向量语义与本地知识字段，"
+        } else if used_context_match {
             "结合本轮上下文，"
         } else {
             ""
@@ -3854,7 +4170,9 @@ fn score_search_row(
             truncate_chars(summary, 120)
         )
     } else {
-        let prefix = if used_context_match {
+        let prefix = if vector_score.is_some() {
+            "根据向量语义与本地知识字段，"
+        } else if used_context_match {
             "结合本轮上下文，"
         } else {
             ""
@@ -3862,7 +4180,7 @@ fn score_search_row(
         format!("{prefix}该仓库的基础元数据与“{query}”匹配，可作为候选项目继续查看 README 与笔记。")
     };
     let citations = build_search_citations(&row, &matched_keywords, query_tokens);
-    score += (row.stars_count as f64 + 1.0).log10().min(6.0);
+    score += (row.stars_count as f64 + 1.0).log10().min(3.0);
     let score = score.min(99.0);
     let repository = RepositoryListItem {
         id: row.id,
@@ -3934,13 +4252,12 @@ fn build_search_citation(
         return None;
     }
 
-    let normalized_lower = normalized.to_lowercase();
     let match_keyword = keywords
         .iter()
         .map(String::as_str)
         .map(str::trim)
         .filter(|keyword| !keyword.is_empty())
-        .find(|keyword| normalized_lower.contains(&keyword.to_lowercase()));
+        .find(|keyword| find_search_term_byte_index(&normalized, keyword).is_some());
 
     match match_keyword {
         Some(keyword) => Some(SearchCitationData {
@@ -3956,9 +4273,7 @@ fn build_search_citation(
 }
 
 fn build_keyword_snippet(content: &str, keyword: &str, max_chars: usize) -> String {
-    let content_lower = content.to_lowercase();
-    let keyword_lower = keyword.to_lowercase();
-    let Some(byte_index) = content_lower.find(&keyword_lower) else {
+    let Some(byte_index) = find_search_term_byte_index(content, keyword) else {
         return truncate_chars(content, max_chars);
     };
     let match_char_index = content[..byte_index].chars().count();
@@ -3978,6 +4293,39 @@ fn build_keyword_snippet(content: &str, keyword: &str, max_chars: usize) -> Stri
     }
 
     snippet
+}
+
+fn find_search_term_byte_index(content: &str, term: &str) -> Option<usize> {
+    let normalized_term = term.trim();
+    if normalized_term.is_empty() {
+        return None;
+    }
+    if normalized_term
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric())
+    {
+        let normalized_content = content.to_ascii_lowercase();
+        let normalized_term = normalized_term.to_ascii_lowercase();
+        return normalized_content
+            .match_indices(&normalized_term)
+            .map(|(index, _)| index)
+            .find(|index| {
+                let bytes = normalized_content.as_bytes();
+                let start_boundary = *index == 0 || !bytes[*index - 1].is_ascii_alphanumeric();
+                let end = *index + normalized_term.len();
+                let end_boundary = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
+                start_boundary && end_boundary
+            });
+    }
+    content.to_lowercase().find(&normalized_term.to_lowercase())
+}
+
+fn is_short_ascii_search_term(query: &str) -> bool {
+    let normalized = query.trim();
+    (1..=3).contains(&normalized.len())
+        && normalized
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
 }
 
 fn tokenize_query(query: &str) -> Vec<String> {
@@ -4021,6 +4369,13 @@ fn contains_token(tokens: &[String], needle: &str) -> bool {
 
 fn search_result_uses_context(result: &AiSearchResultData) -> bool {
     result.reasons.iter().any(is_context_reason)
+}
+
+fn search_result_uses_vector(result: &AiSearchResultData) -> bool {
+    result
+        .reasons
+        .iter()
+        .any(|reason| reason.label == "语义相似命中")
 }
 
 fn is_context_reason(reason: &SearchMatchReasonData) -> bool {
@@ -5702,7 +6057,18 @@ INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:1', 'tag-knowledge');
             database_path: std::env::temp_dir().join("gsat-search-mode-unused.sqlite3"),
         };
         let response = storage
-            .search_repositories("  ", &[], &[], 20, 0, Some("1001"), None)
+            .search_repositories(RepositorySearchOptions {
+                query: "  ",
+                context_queries: &[],
+                context_repository_ids: &[],
+                limit: 20,
+                offset: 0,
+                max_results: 8,
+                account_id: Some("1001"),
+                vector_scores: &HashMap::new(),
+                vector_error: None,
+                metadata: None,
+            })
             .expect("空查询应返回空结果");
 
         assert_eq!(response.mode, "local_knowledge");
@@ -5724,7 +6090,18 @@ INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:1', 'tag-knowledge');
             ai_error: None,
         };
         let response = storage
-            .search_repositories("  ", &[], &[], 20, 0, Some("1001"), Some(metadata))
+            .search_repositories(RepositorySearchOptions {
+                query: "  ",
+                context_queries: &[],
+                context_repository_ids: &[],
+                limit: 20,
+                offset: 0,
+                max_results: 8,
+                account_id: Some("1001"),
+                vector_scores: &HashMap::new(),
+                vector_error: None,
+                metadata: Some(metadata),
+            })
             .expect("空查询也应保留 AI 搜索元数据");
 
         assert_eq!(response.query, "帮我找动画库");
@@ -5770,8 +6147,8 @@ INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:1', 'tag-knowledge');
             "组件化 UI",
             &query_tokens,
             &context_tokens,
-            &query_tokens,
             &context_repository_ids,
+            None,
         )
         .expect("搜索评分应可执行")
         .expect("应命中搜索结果");
@@ -5819,10 +6196,6 @@ INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:1', 'tag-knowledge');
         };
         let query_tokens = tokenize_query("React UI TypeScript frontend hooks component");
         let context_tokens = tokenize_query("离线缓存");
-        let mut tokens = query_tokens.clone();
-        for token in &context_tokens {
-            push_unique(&mut tokens, token);
-        }
         let context_repository_ids = HashSet::new();
 
         let result = score_search_row(
@@ -5830,8 +6203,8 @@ INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:1', 'tag-knowledge');
             "React UI TypeScript frontend hooks component",
             &query_tokens,
             &context_tokens,
-            &tokens,
             &context_repository_ids,
+            None,
         )
         .expect("搜索评分应可执行")
         .expect("应命中搜索结果");
@@ -5868,17 +6241,17 @@ INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:1', 'tag-knowledge');
             ),
             tag_names_json: "[]".to_owned(),
         };
-        let query_tokens = tokenize_query("deployment target");
+        let query_tokens = tokenize_query("deployment target release");
         let context_tokens = Vec::new();
         let context_repository_ids = HashSet::new();
 
         let result = score_search_row(
             row,
-            "deployment target",
+            "deployment target release",
             &query_tokens,
             &context_tokens,
-            &query_tokens,
             &context_repository_ids,
+            None,
         )
         .expect("搜索评分应可执行")
         .expect("README 命中时应返回结果");
@@ -5891,7 +6264,232 @@ INSERT INTO repo_tags (repo_id, tag_id) VALUES ('1001:1', 'tag-knowledge');
     }
 
     #[test]
-    fn search_repositories_uses_recent_context_queries() {
+    fn search_row_rejects_weak_keyword_but_accepts_vector_match() {
+        let make_row = || SearchRepositoryRow {
+            id: "1001:45".to_owned(),
+            account_id: "1001".to_owned(),
+            owner: "owner".to_owned(),
+            name: "semantic-tool".to_owned(),
+            full_name: "owner/semantic-tool".to_owned(),
+            description: Some("Command line helper".to_owned()),
+            language: Some("Rust".to_owned()),
+            topics_json: r#"["cli"]"#.to_owned(),
+            html_url: "https://github.com/owner/semantic-tool".to_owned(),
+            stars_count: 600,
+            forks_count: 20,
+            starred_at: "2026-01-01T00:00:00Z".to_owned(),
+            pushed_at: None,
+            has_readme: 1,
+            note_markdown: None,
+            summary_zh: None,
+            keywords_json: None,
+            suggested_tags_json: None,
+            readme_excerpt: Some("Supports obscure capability through a local plugin.".to_owned()),
+            tag_names_json: "[]".to_owned(),
+        };
+        let query_tokens = tokenize_query("obscure");
+        let context_repository_ids = HashSet::new();
+
+        let weak_keyword = score_search_row(
+            make_row(),
+            "obscure",
+            &query_tokens,
+            &[],
+            &context_repository_ids,
+            None,
+        )
+        .expect("弱关键词评分应可执行");
+        assert!(weak_keyword.is_none());
+
+        let vector_match = score_search_row(
+            make_row(),
+            "obscure",
+            &query_tokens,
+            &[],
+            &context_repository_ids,
+            Some(0.91),
+        )
+        .expect("向量评分应可执行")
+        .expect("高相似度向量应允许语义召回");
+        assert!(vector_match
+            .reasons
+            .iter()
+            .any(|reason| reason.label == "语义相似命中"));
+        assert!(vector_match.score > 40.0);
+    }
+
+    #[test]
+    fn multi_term_keyword_search_requires_more_than_one_matching_term() {
+        let row = SearchRepositoryRow {
+            id: "1001:46".to_owned(),
+            account_id: "1001".to_owned(),
+            owner: "owner".to_owned(),
+            name: "react-form".to_owned(),
+            full_name: "owner/react-form".to_owned(),
+            description: Some("React form component library".to_owned()),
+            language: Some("TypeScript".to_owned()),
+            topics_json: r#"["react","form"]"#.to_owned(),
+            html_url: "https://github.com/owner/react-form".to_owned(),
+            stars_count: 500,
+            forks_count: 20,
+            starred_at: "2026-01-01T00:00:00Z".to_owned(),
+            pushed_at: None,
+            has_readme: 0,
+            note_markdown: None,
+            summary_zh: None,
+            keywords_json: None,
+            suggested_tags_json: None,
+            readme_excerpt: None,
+            tag_names_json: "[]".to_owned(),
+        };
+        let query_tokens = tokenize_query("React animation");
+        let result = score_search_row(
+            row,
+            "React animation",
+            &query_tokens,
+            &[],
+            &HashSet::new(),
+            None,
+        )
+        .expect("多词关键词评分应可执行");
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn search_repositories_enforces_hard_result_limit() {
+        let (storage, database_path) = temp_storage("search-hard-limit");
+        storage
+            .execute_sql(
+                "INSERT INTO github_accounts (id, login, token_ref) VALUES ('1001', 'alice', 'test');",
+            )
+            .expect("写入测试账号");
+        let values = (1..=15)
+            .map(|index| {
+                format!(
+                    "('1001:{index}', '1001', 'owner', 'react-{index}', 'owner/react-{index}', 'React animation library', 'TypeScript', '[\"react\",\"animation\"]', 'https://github.com/owner/react-{index}', {}, 1, '2026-01-{:02}T00:00:00Z')",
+                    100 + index,
+                    index.min(15),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",\n");
+        storage
+            .execute_sql(&format!(
+                "INSERT INTO repositories (id, account_id, owner, name, full_name, description, language, topics_json, html_url, stars_count, forks_count, starred_at) VALUES {values};"
+            ))
+            .expect("写入搜索上限测试仓库");
+
+        let response = storage
+            .search_repositories(RepositorySearchOptions {
+                query: "React animation",
+                context_queries: &[],
+                context_repository_ids: &[],
+                limit: 100,
+                offset: 0,
+                max_results: 100,
+                account_id: Some("1001"),
+                vector_scores: &HashMap::new(),
+                vector_error: None,
+                metadata: None,
+            })
+            .expect("搜索上限测试应可执行");
+
+        assert_eq!(response.total_count, 10);
+        assert_eq!(response.results.len(), 10);
+        let _ = std::fs::remove_file(database_path);
+    }
+
+    #[test]
+    fn ai_acronym_search_rejects_substrings_and_unconfirmed_vector_hits() {
+        assert!(find_search_term_byte_index("AI agent framework", "AI").is_some());
+        assert!(find_search_term_byte_index("tailwind", "AI").is_none());
+        assert!(find_search_term_byte_index("maintain styles", "AI").is_none());
+        assert!(find_search_term_byte_index("available plugins", "AI").is_none());
+
+        let (storage, database_path) = temp_storage("search-ai-acronym");
+        storage
+            .execute_sql(
+                r#"
+INSERT INTO github_accounts (id, login, token_ref) VALUES ('1001', 'alice', 'test');
+INSERT INTO repositories (id, account_id, owner, name, full_name, description, language, topics_json, html_url, stars_count, forks_count, starred_at)
+VALUES
+  ('1001:1', '1001', 'owner', 'ai-agent', 'owner/ai-agent', 'AI agent framework for local workflows', 'Python', '["ai","agent"]', 'https://github.com/owner/ai-agent', 100, 5, '2026-01-02T00:00:00Z'),
+  ('1001:2', '1001', 'owner', 'tailwind-kit', 'owner/tailwind-kit', 'Utility CSS framework to maintain consistent styles', 'TypeScript', '["css","frontend"]', 'https://github.com/owner/tailwind-kit', 10000, 500, '2026-01-01T00:00:00Z');
+INSERT INTO repo_readmes (repo_id, raw_markdown, content_hash, source_path, fetched_at)
+VALUES ('1001:2', 'Build available utility classes and maintain design tokens.', 'hash-tailwind', 'README.md', '2026-01-01T00:00:00Z');
+"#,
+            )
+            .expect("写入 AI 缩写检索测试数据");
+        let vector_scores =
+            HashMap::from([("1001:1".to_owned(), 0.82), ("1001:2".to_owned(), 0.99)]);
+
+        let response = storage
+            .search_repositories(RepositorySearchOptions {
+                query: "AI",
+                context_queries: &[],
+                context_repository_ids: &[],
+                limit: 10,
+                offset: 0,
+                max_results: 8,
+                account_id: Some("1001"),
+                vector_scores: &vector_scores,
+                vector_error: None,
+                metadata: None,
+            })
+            .expect("AI 缩写检索应可执行");
+
+        assert_eq!(response.total_count, 1);
+        assert_eq!(response.results[0].repository.full_name, "owner/ai-agent");
+        assert!(!response
+            .results
+            .iter()
+            .any(|result| result.repository.full_name == "owner/tailwind-kit"));
+        let _ = std::fs::remove_file(database_path);
+    }
+
+    #[test]
+    fn repository_embedding_save_is_idempotent_and_readable() {
+        let (storage, database_path) = temp_storage("embedding-persistence");
+        storage
+            .execute_sql(
+                r#"
+INSERT INTO github_accounts (id, login, token_ref) VALUES ('1001', 'alice', 'test');
+INSERT INTO repositories (id, account_id, owner, name, full_name, description, language, topics_json, html_url, stars_count, forks_count, starred_at)
+VALUES ('1001:1', '1001', 'owner', 'repo', 'owner/repo', 'Vector repository', 'Rust', '[]', 'https://github.com/owner/repo', 10, 1, '2026-01-01T00:00:00Z');
+"#,
+            )
+            .expect("写入向量持久化测试数据");
+        let first = StoredRepositoryEmbedding {
+            account_id: "1001".to_owned(),
+            repo_id: "1001:1".to_owned(),
+            source_hash: "hash-1".to_owned(),
+            model: "embedding-test".to_owned(),
+            vector: vec![1.0, 0.0],
+        };
+        storage
+            .save_repository_embedding(&first, "v-test")
+            .expect("首次保存向量");
+        let updated = StoredRepositoryEmbedding {
+            source_hash: "hash-2".to_owned(),
+            vector: vec![0.0, 1.0],
+            ..first
+        };
+        storage
+            .save_repository_embedding(&updated, "v-test")
+            .expect("相同仓库向量应幂等更新");
+
+        let records = storage
+            .list_stored_repository_embeddings("1001", "embedding-test", 2, "v-test")
+            .expect("应能读取保存的向量");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].source_hash, "hash-2");
+        assert_eq!(records[0].vector, vec![0.0, 1.0]);
+        let _ = std::fs::remove_file(database_path);
+    }
+
+    #[test]
+    fn search_repositories_does_not_create_matches_from_context_only() {
         let database_path = std::env::temp_dir().join(format!(
             "gsat-context-search-test-{}.sqlite3",
             SystemTime::now()
@@ -5918,37 +6516,40 @@ VALUES
             .expect("写入上下文搜索测试数据");
 
         let without_context = storage
-            .search_repositories("弹簧效果", &[], &[], 20, 0, Some("1001"), None)
+            .search_repositories(RepositorySearchOptions {
+                query: "弹簧效果",
+                context_queries: &[],
+                context_repository_ids: &[],
+                limit: 20,
+                offset: 0,
+                max_results: 8,
+                account_id: Some("1001"),
+                vector_scores: &HashMap::new(),
+                vector_error: None,
+                metadata: None,
+            })
             .expect("无上下文搜索应可执行");
         let with_context = storage
-            .search_repositories(
-                "弹簧效果",
-                &["React 动画库".to_owned()],
-                &[],
-                20,
-                0,
-                Some("1001"),
-                None,
-            )
+            .search_repositories(RepositorySearchOptions {
+                query: "弹簧效果",
+                context_queries: &["React 动画库".to_owned()],
+                context_repository_ids: &[],
+                limit: 20,
+                offset: 0,
+                max_results: 8,
+                account_id: Some("1001"),
+                vector_scores: &HashMap::new(),
+                vector_error: None,
+                metadata: None,
+            })
             .expect("上下文搜索应可执行");
 
         assert!(without_context.results.is_empty());
         assert!(without_context.context_queries_used.is_empty());
         assert!(!without_context.context_applied);
-        assert_eq!(with_context.total_count, 1);
+        assert!(with_context.results.is_empty());
         assert_eq!(with_context.context_queries_used, vec!["React 动画库"]);
-        assert!(with_context.context_applied);
-        assert_eq!(
-            with_context.results[0].repository.full_name,
-            "pmndrs/react-spring"
-        );
-        assert!(with_context.results[0]
-            .reasons
-            .iter()
-            .any(|reason| reason.label.starts_with("上下文")));
-        assert!(with_context.results[0]
-            .explanation_zh
-            .contains("结合本轮上下文"));
+        assert!(!with_context.context_applied);
 
         let _ = std::fs::remove_file(database_path);
     }
@@ -5981,15 +6582,18 @@ VALUES
             .expect("写入上一轮结果上下文测试数据");
 
         let response = storage
-            .search_repositories(
-                "context",
-                &["上一轮 TypeScript 工具".to_owned()],
-                &["1001:1".to_owned()],
-                20,
-                0,
-                Some("1001"),
-                None,
-            )
+            .search_repositories(RepositorySearchOptions {
+                query: "context",
+                context_queries: &["上一轮 TypeScript 工具".to_owned()],
+                context_repository_ids: &["1001:1".to_owned()],
+                limit: 20,
+                offset: 0,
+                max_results: 8,
+                account_id: Some("1001"),
+                vector_scores: &HashMap::new(),
+                vector_error: None,
+                metadata: None,
+            })
             .expect("上一轮结果上下文搜索应可执行");
 
         assert_eq!(response.total_count, 2);

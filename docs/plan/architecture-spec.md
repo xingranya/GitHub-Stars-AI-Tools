@@ -174,7 +174,7 @@ export interface AiProvider {
 - `OpenAI-compatible` 兼容 Chat Completions 的第三方接口
 - `Anthropic` Claude Messages API
 
-当前知识库 AI 只要求聊天协议，不要求用户配置向量模型，也不会在自然语言搜索、README 摘要、标签网络或 GitHub 相似推荐中自动调用 Embeddings 接口。`embed?` 仅为后续 zvec 本地向量索引保留能力边界。
+知识库 AI 的聊天配置与 Embedding 配置相互独立。向量检索默认关闭，只有用户主动启用后，自然语言搜索和索引重建才会调用 OpenAI 兼容 Embeddings 接口；README 摘要、标签网络和 GitHub 相似推荐仍只使用聊天协议。
 
 后续新增服务时继续挂在同一适配层，不把模型 SDK 直接暴露给 UI。
 
@@ -197,20 +197,22 @@ export type RepoQuery = {
 
 ## 检索策略
 
-MVP：
+基础检索：
 
 1. `repositories` 元数据过滤。
 2. `SQLite FTS5` 检索 name、description、topics、note、summary_zh。
 3. 结合 README 缓存、AI 摘要、标签、笔记和最近对话上下文返回中文匹配理由。
-4. 不生成 query embedding，不要求向量模型。
+4. 未启用 Embedding 时不生成 query embedding。
 
-后续 zvec 混合检索：
+zvec 混合检索：
 
-1. 后续在用户配置 Embedding 后生成 query embedding。
+1. 用户启用并配置 Embedding 后生成 query embedding。
 2. FTS 与向量双路召回。
 3. 合并候选。
 4. 用规则或 reranker 重排序。
 5. 返回中文匹配解释和 README 引用片段。
+
+所有检索先执行对话意图门控；融合结果默认 8 条、硬上限 10 条。AI 可用时只把最终候选的仓库名、描述、Topics 和摘要用于回答生成，用户笔记保持本地。
 
 ## README 中文化策略
 

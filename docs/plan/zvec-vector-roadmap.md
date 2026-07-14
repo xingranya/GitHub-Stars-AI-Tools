@@ -105,14 +105,14 @@ GSAT 当前以 SQLite 作为本地事实源，已经具备 Stars 元数据、REA
 ## 风险与处理
 
 - zvec API 或打包方式变化：通过 `VectorIndexPort` 隔离实现，保留内存向量索引或 SQLite FTS 作为回退。
-- 向量成本过高：默认只对 AI 摘要和笔记生成向量，README 全文分片作为可选项。
+- 向量成本过高：仅对仓库公开元数据、AI 摘要和截断 README 生成单条知识向量，不发送个人笔记，也不做 README 全文分片。
 - 模型维度变化：索引按 `embedding_model + dimensions` 分桶，切换模型时新建索引或触发重建。
 - 数据隐私：embedding 生成只在用户主动配置 AI 服务后执行，并在界面明确提示会发送摘要文本到配置的服务。
 
 ## 当前状态
 
-- 已有 AI 服务适配层和 OpenAI 兼容 embedding 能力基础。
-- 已有 `VectorIndexPort` 类型、worker pipeline 测试桩和可执行的本地向量索引基准实现。
-- 本地向量索引已覆盖 cosine 排序、账号隔离、模型版本过滤、维度过滤、upsert 覆盖和最小分数过滤，可作为 zvec adapter 的行为基准与 fallback。
-- 当前桌面端上线主链路不要求用户配置向量模型，也不自动调用 Embeddings 接口；知识库能力优先基于 README 缓存、AI 摘要、关键词、标签、笔记和本地检索完成。
-- 尚未引入 zvec adapter，也未提供独立 zvec 索引目录、重建按钮和索引状态面板。
+- 已接入 `zvec-rust 0.5.1`，按账号、模型和维度隔离 HNSW cosine 索引。
+- SQLite `repo_embeddings` 是向量事实源；zvec 缺失、为空或损坏时可自动恢复或手动重建。
+- 设置页已提供独立 Embedding Provider、地址、凭据、模型、维度、阈值、结果数、连接测试、索引状态和重建操作。
+- AI 搜索已接入问候语门控、严格关键词门槛、zvec TopK、融合精排、默认 Top 8 和最多 10 条硬上限。
+- 向量能力默认关闭；未配置或请求失败时自动降级为严格关键词检索。

@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { isSavedAiApiKeyPlaceholder, SAVED_AI_API_KEY_PLACEHOLDER, shouldFlushAiApiKey } from '@/lib/ai-config';
+import {
+  isSavedAiApiKeyPlaceholder,
+  normalizeEmbeddingSettings,
+  SAVED_AI_API_KEY_PLACEHOLDER,
+  shouldFlushAiApiKey,
+  shouldFlushEmbeddingApiKey,
+} from '@/lib/ai-config';
 import type { AppSettings } from '@/types-settings';
 import { DEFAULT_SETTINGS } from '@/types-settings';
 
@@ -10,6 +16,7 @@ type AppSettingsPatch = {
   theme?: Partial<AppSettings['theme']>;
   sync?: Partial<AppSettings['sync']>;
   ai?: Partial<AppSettings['ai']>;
+  embedding?: Partial<AppSettings['embedding']>;
   general?: Partial<AppSettings['general']>;
   runtime?: Partial<AppSettings['runtime']>;
 };
@@ -19,6 +26,7 @@ export function useSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [aiKeySaveStatus, setAiKeySaveStatus] = useState<AiKeySaveStatus>('idle');
+  const [embeddingKeySaveStatus, setEmbeddingKeySaveStatus] = useState<AiKeySaveStatus>('idle');
   const aiKeySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAiKeyRef = useRef<string | null>(null);
   const pendingAiKeyProviderRef = useRef<AppSettings['ai']['provider']>(DEFAULT_SETTINGS.ai.provider);
@@ -49,6 +57,7 @@ export function useSettings() {
           theme: normalizeThemeSettings({ ...DEFAULT_SETTINGS.theme, ...parsed.theme }),
           sync: normalizeSyncSettings({ ...DEFAULT_SETTINGS.sync, ...parsed.sync }),
           ai: normalizeAiSettings({ ...DEFAULT_SETTINGS.ai, ...parsed.ai, apiKey: '' }),
+          embedding: normalizeEmbeddingSettings({ ...DEFAULT_SETTINGS.embedding, ...parsed.embedding, apiKey: '' }),
           general: {
             showWelcomeOnStartup:
               parsed.general?.showWelcomeOnStartup ?? DEFAULT_SETTINGS.general.showWelcomeOnStartup,
@@ -71,9 +80,23 @@ export function useSettings() {
       }
     }
 
+    let embeddingApiKey = '';
+    if (shouldReadSavedEmbeddingApiKey(nextSettings.embedding)) {
+      try {
+        embeddingApiKey = await readSavedEmbeddingApiKeyPlaceholder();
+      } catch (error) {
+        embeddingApiKey = '';
+        nextError = mergeSettingsError(
+          nextError,
+          `Embedding Key 状态读取失败，请检查系统凭据管理器权限：${toErrorMessage(error)}`,
+        );
+      }
+    }
+
     const hydratedSettings = {
       ...nextSettings,
       ai: { ...nextSettings.ai, apiKey },
+      embedding: { ...nextSettings.embedding, apiKey: embeddingApiKey },
     };
     setSettings(hydratedSettings);
     try {
@@ -89,10 +112,19 @@ export function useSettings() {
     const partialAiIncludesApiKey = Boolean(
       partial.ai && Object.prototype.hasOwnProperty.call(partial.ai, 'apiKey'),
     );
+    const partialEmbeddingIncludesApiKey = Boolean(
+      partial.embedding && Object.prototype.hasOwnProperty.call(partial.embedding, 'apiKey'),
+    );
     const partialAiChangesProvider = Boolean(
       partial.ai?.provider && partial.ai.provider !== settings.ai.provider,
     );
+    const partialEmbeddingChangesProvider = Boolean(
+      partial.embedding?.provider && partial.embedding.provider !== settings.embedding.provider,
+    );
     let nextAi = normalizeAiSettings(partial.ai ? { ...settings.ai, ...partial.ai } : settings.ai);
+    let nextEmbedding = normalizeEmbeddingSettings(
+      partial.embedding ? { ...settings.embedding, ...partial.embedding } : settings.embedding,
+    );
     let nextError: string | null = null;
 
     if (partial.ai && partialAiChangesProvider && !partialAiIncludesApiKey) {
@@ -108,12 +140,32 @@ export function useSettings() {
       }
     }
 
+    if (partial.embedding && partialEmbeddingChangesProvider && !partialEmbeddingIncludesApiKey) {
+      try {
+        nextEmbedding = {
+          ...nextEmbedding,
+          apiKey: nextEmbedding.provider === 'none'
+            ? nextEmbedding.apiKey
+            : shouldReadSavedEmbeddingApiKey(nextEmbedding)
+              ? await readSavedEmbeddingApiKeyPlaceholder()
+              : '',
+        };
+      } catch (error) {
+        nextEmbedding = { ...nextEmbedding, apiKey: '' };
+        nextError = mergeSettingsError(
+          nextError,
+          `Embedding Key 状态读取失败，请检查系统凭据管理器权限：${toErrorMessage(error)}`,
+        );
+      }
+    }
+
     const updated = {
       ...settings,
       ...partial,
       theme: normalizeThemeSettings(partial.theme ? { ...settings.theme, ...partial.theme } : settings.theme),
       sync: normalizeSyncSettings(partial.sync ? { ...settings.sync, ...partial.sync } : settings.sync),
       ai: nextAi,
+      embedding: nextEmbedding,
       general: normalizeGeneralSettings(partial.general ? { ...settings.general, ...partial.general } : settings.general),
       runtime: normalizeRuntimeSettings(partial.runtime ? { ...settings.runtime, ...partial.runtime } : settings.runtime),
     };
@@ -129,6 +181,19 @@ export function useSettings() {
         } catch (error) {
           setAiKeySaveStatus('error');
           nextError = `AI Key 保存失败，请检查系统凭据管理器权限：${toErrorMessage(error)}`;
+        }
+      }
+      if (partialEmbeddingIncludesApiKey) {
+        try {
+          setEmbeddingKeySaveStatus('saving');
+          await persistEmbeddingApiKey(partial.embedding?.apiKey ?? '');
+          setEmbeddingKeySaveStatus((partial.embedding?.apiKey ?? '').trim() ? 'saved' : 'idle');
+        } catch (error) {
+          setEmbeddingKeySaveStatus('error');
+          nextError = mergeSettingsError(
+            nextError,
+            `Embedding Key 保存失败，请检查系统凭据管理器权限：${toErrorMessage(error)}`,
+          );
         }
       }
       await persistSettingsSnapshot(updated);
@@ -148,6 +213,33 @@ export function useSettings() {
 
   async function updateAI(ai: Partial<AppSettings['ai']>) {
     await updateSettings({ ai });
+  }
+
+  async function updateEmbedding(embedding: Partial<AppSettings['embedding']>) {
+    await updateSettings({ embedding });
+  }
+
+  async function flushEmbeddingKey(apiKey = settings.embedding.apiKey) {
+    try {
+      setEmbeddingKeySaveStatus('saving');
+      await persistEmbeddingApiKey(apiKey);
+      const normalizedApiKey = apiKey.trim();
+      const updated = {
+        ...settings,
+        embedding: {
+          ...settings.embedding,
+          apiKey: normalizedApiKey ? SAVED_AI_API_KEY_PLACEHOLDER : '',
+        },
+      };
+      setSettings(updated);
+      await persistSettingsSnapshot(updated);
+      setEmbeddingKeySaveStatus(normalizedApiKey ? 'saved' : 'idle');
+      setSettingsError(null);
+    } catch (error) {
+      setEmbeddingKeySaveStatus('error');
+      setSettingsError(`Embedding Key 保存失败，请检查系统凭据管理器权限：${toErrorMessage(error)}`);
+      throw error;
+    }
   }
 
   async function updateAIKeyDraft(apiKey: string) {
@@ -200,6 +292,12 @@ export function useSettings() {
     }
 
     try {
+      await invoke('clear_embedding_api_key');
+    } catch (error) {
+      failures.push(`Embedding Key 清理失败：${toErrorMessage(error)}`);
+    }
+
+    try {
       await invoke('clear_app_settings');
     } catch (error) {
       failures.push(`设置文件清理失败：${toErrorMessage(error)}`);
@@ -214,6 +312,7 @@ export function useSettings() {
     pendingAiKeyRef.current = null;
     pendingAiKeyProviderRef.current = DEFAULT_SETTINGS.ai.provider;
     setAiKeySaveStatus('idle');
+    setEmbeddingKeySaveStatus('idle');
 
     if (failures.length > 0) {
       const message = `设置重置失败，请检查本机存储权限：${failures.join('；')}`;
@@ -267,6 +366,18 @@ export function useSettings() {
     }
   }
 
+  async function persistEmbeddingApiKey(apiKey: string) {
+    const normalizedApiKey = apiKey.trim();
+    if (isSavedAiApiKeyPlaceholder(normalizedApiKey)) {
+      return;
+    }
+    if (normalizedApiKey) {
+      await invoke('save_embedding_api_key', { apiKey: normalizedApiKey });
+    } else {
+      await invoke('clear_embedding_api_key');
+    }
+  }
+
   async function persistSettingsSnapshot(nextSettings: AppSettings) {
     const sanitizedSettings = sanitizeSettingsForStorage(nextSettings);
     await invoke('save_app_settings', { settings: sanitizedSettings });
@@ -277,12 +388,15 @@ export function useSettings() {
     isLoading,
     settingsError,
     aiKeySaveStatus,
+    embeddingKeySaveStatus,
     updateSettings,
     updateTheme,
     updateSync,
     updateAI,
+    updateEmbedding,
     updateAIKeyDraft,
     flushAIKey,
+    flushEmbeddingKey,
     updateGeneral,
     updateRuntime,
     resetSettings,
@@ -310,6 +424,15 @@ async function readSavedAiApiKeyPlaceholder(ai: AppSettings['ai']) {
   return hasSavedApiKey ? SAVED_AI_API_KEY_PLACEHOLDER : '';
 }
 
+function shouldReadSavedEmbeddingApiKey(embedding: AppSettings['embedding']) {
+  return embedding.provider !== 'none' && shouldFlushEmbeddingApiKey(embedding);
+}
+
+async function readSavedEmbeddingApiKeyPlaceholder() {
+  const hasSavedApiKey = await invoke<boolean>('has_embedding_api_key');
+  return hasSavedApiKey ? SAVED_AI_API_KEY_PLACEHOLDER : '';
+}
+
 async function loadPersistedSettingsSnapshot(): Promise<Partial<AppSettings> | null> {
   return invoke<Partial<AppSettings> | null>('get_app_settings');
 }
@@ -323,6 +446,10 @@ function sanitizeSettingsForStorage(settings: AppSettings): AppSettings {
     runtime: normalizeRuntimeSettings(settings.runtime),
     ai: {
       ...settings.ai,
+      apiKey: '',
+    },
+    embedding: {
+      ...normalizeEmbeddingSettings(settings.embedding),
       apiKey: '',
     },
   };

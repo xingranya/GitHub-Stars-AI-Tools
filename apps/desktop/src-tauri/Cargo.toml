@@ -26,6 +26,7 @@ tauri-plugin-process = "2.3.0"
 tauri-plugin-updater = "2.9.0"
 time = { version = "0.3.44", features = ["formatting"] }
 tokio = { version = "1", features = ["time"] }
+zvec-rust = "0.5.1"
 
 [features]
 default = ["custom-protocol"]

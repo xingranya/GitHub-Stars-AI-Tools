@@ -7,8 +7,16 @@ import { Icon } from '@/components/ui/icon';
 import { CopyLinkButton } from '@/components/copy-link-button';
 import { useWorkspace } from '@/providers/workspace-provider';
 import { useAppSettings } from '@/providers/settings-provider';
-import { getAiConfigMessage, shouldFlushAiApiKey, toBackendAiRequestConfig } from '@/lib/ai-config';
+import {
+  getAiConfigMessage,
+  getEmbeddingConfigMessage,
+  shouldFlushAiApiKey,
+  shouldFlushEmbeddingApiKey,
+  toBackendAiRequestConfig,
+  toBackendEmbeddingRequestConfig,
+} from '@/lib/ai-config';
 import { compactNumber } from '@/lib/format';
+import { normalizeAiSearchResponse } from '@/lib/ai-search-response';
 import type { AiSearchResponse, AiSearchResult, AiStreamEvent, GitHubUser } from '@/types';
 
 const FALLBACK_SUGGESTIONS = [
@@ -28,7 +36,7 @@ const MAX_CONTEXT_QUERIES = 4;
 const MAX_CONTEXT_REPOSITORIES = 30;
 const MAX_SEARCH_TURNS = 8;
 const MAX_STORED_SEARCH_SESSIONS = 6;
-const SEARCH_RESULTS_PAGE_SIZE = 6;
+const SEARCH_RESULTS_PAGE_SIZE = 10;
 
 type AISearchPageProps = {
   onOpenRepository: (repository: AiSearchResult['repository']) => void;
@@ -101,9 +109,13 @@ export function AISearchPage(props: AISearchPageProps) {
       && workspace.repositoryStats.total === 0,
   );
   const aiConfigMessage = getAiConfigMessage(settingsHook.settings.ai);
+  const embeddingConfigMessage = getEmbeddingConfigMessage(settingsHook.settings.embedding);
   const aiEnhancementNotice = aiConfigMessage
-    ? `AI 增强未启用：${aiConfigMessage} 当前仍可使用本地知识搜索。`
-    : 'AI 增强已启用：搜索时会先用当前 AI 设置优化搜索问题，再在本地知识库中查找匹配仓库。';
+    ? `AI 问题理解未启用：${aiConfigMessage}`
+    : 'AI 会先理解你的问题，再基于本地检索结果给出回答。';
+  const embeddingNotice = embeddingConfigMessage
+    ? `向量检索未启用：${embeddingConfigMessage} 当前会使用严格关键词检索。`
+    : `向量检索已启用：默认返回 ${settingsHook.settings.embedding.maxResults} 个结果，最多不超过 10 个。`;
   const searchPreconditionNotice = accountId
     ? hasNoLocalStars
       ? '当前账号还没有本地 Stars 数据，请先同步 Stars 后再搜索。智能知识搜索会在本地知识库中检索仓库元数据、README、AI 摘要、标签和笔记。'
@@ -291,6 +303,14 @@ export function AISearchPage(props: AISearchPageProps) {
           aiKeyFlushError = toErrorMessage(reason);
         }
       }
+      let embeddingKeyFlushError: string | null = null;
+      if (!embeddingConfigMessage && shouldFlushEmbeddingApiKey(settingsHook.settings.embedding)) {
+        try {
+          await settingsHook.flushEmbeddingKey(settingsHook.settings.embedding.apiKey);
+        } catch (reason) {
+          embeddingKeyFlushError = toErrorMessage(reason);
+        }
+      }
       const recentTurns = shouldStartNewSession ? [] : searchTurns.slice(-MAX_CONTEXT_QUERIES);
       const contextQueries = recentTurns
         .flatMap((turn) => [turn.query, turn.aiQuery].filter(isNonEmptyString))
@@ -308,9 +328,12 @@ export function AISearchPage(props: AISearchPageProps) {
           contextRepositoryIds,
           requestId,
           ...(aiConfigMessage || aiKeyFlushError ? {} : { aiConfig: toBackendAiRequestConfig(settingsHook.settings.ai) }),
+          ...(embeddingConfigMessage || embeddingKeyFlushError
+            ? {}
+            : { embeddingConfig: toBackendEmbeddingRequestConfig(settingsHook.settings.embedding) }),
         },
       });
-      const visibleData = aiKeyFlushError
+      let visibleData = aiKeyFlushError
         ? {
             ...data,
             mode: 'local_knowledge' as const,
@@ -320,6 +343,14 @@ export function AISearchPage(props: AISearchPageProps) {
             aiError: `AI Key 保存失败，已改用本地知识搜索：${aiKeyFlushError}`,
           }
         : data;
+      if (embeddingKeyFlushError) {
+        visibleData = {
+          ...visibleData,
+          retrievalMode: 'keyword',
+          vectorApplied: false,
+          vectorError: `Embedding Key 保存失败，已改用严格关键词检索：${embeddingKeyFlushError}`,
+        };
+      }
       setResponse(visibleData);
       setSearchPageRequest({
         query: visibleData.aiQuery?.trim() || visibleData.query.trim() || q,
@@ -404,6 +435,9 @@ export function AISearchPage(props: AISearchPageProps) {
           accountId,
           contextQueries: paging.contextQueries,
           contextRepositoryIds: paging.contextRepositoryIds,
+          ...(embeddingConfigMessage
+            ? {}
+            : { embeddingConfig: toBackendEmbeddingRequestConfig(settingsHook.settings.embedding) }),
         },
       });
       setResponse((current) => current
@@ -607,6 +641,11 @@ export function AISearchPage(props: AISearchPageProps) {
                   AI 已理解问题
                 </span>
               )}
+              {response?.vectorApplied && (
+                <span className="rounded-full border border-success/20 bg-success/10 px-2.5 py-1 text-success">
+                  向量检索
+                </span>
+              )}
             </div>
           </div>
 
@@ -663,6 +702,18 @@ export function AISearchPage(props: AISearchPageProps) {
                         <div className="min-w-0 space-y-1">
                           <p className="font-medium text-on-surface">已切换为本地知识搜索</p>
                           <p>{aiError}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {response?.vectorError && (
+                    <div className="rounded-lg border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-on-surface-variant">
+                      <div className="flex items-start gap-2">
+                        <Icon name="info" size={16} className="text-warning" />
+                        <div className="min-w-0 space-y-1">
+                          <p className="font-medium text-on-surface">向量检索已降级</p>
+                          <p>{response.vectorError}</p>
                         </div>
                       </div>
                     </div>
@@ -821,7 +872,10 @@ export function AISearchPage(props: AISearchPageProps) {
                   size={18}
                   className={`mt-0.5 shrink-0 ${aiConfigMessage ? 'text-warning' : 'text-primary'}`}
                 />
-                <p>{aiEnhancementNotice}</p>
+                <div className="space-y-1">
+                  <p>{aiEnhancementNotice}</p>
+                  <p>{embeddingNotice}</p>
+                </div>
               </div>
             )}
           </div>
@@ -1591,6 +1645,11 @@ function failAssistantMessage(messages: SearchMessage[], requestId: string, cont
 }
 
 function buildSearchAssistantSummary(response: AiSearchResponse) {
+  if (response.answerZh?.trim()) {
+    const vectorNote = response.vectorError ? `\n\n${response.vectorError}` : '';
+    const aiNote = response.aiError ? `\n\n${response.aiError}` : '';
+    return `${response.answerZh.trim()}${vectorNote}${aiNote}`;
+  }
   const topResult = response.results[0]?.repository.fullName;
   const mode = response.aiEnhanced ? '我已结合你的问题重新理解，并在本地知识库中完成匹配。' : '我已使用本地知识库完成匹配。';
   const top = topResult ? `最佳匹配是 ${topResult}。` : '';
@@ -1707,6 +1766,10 @@ function getStreamStageLabel(stage: string | null) {
       return '理解问题';
     case 'analyze':
       return '匹配仓库';
+    case 'vector':
+      return '向量召回';
+    case 'answer':
+      return '生成回答';
     case 'explain':
       return '解释问题';
     case 'done':
@@ -1762,17 +1825,6 @@ function normalizeStoredSearchSessions(value: unknown): StoredSearchSession[] {
     .filter((session): session is StoredSearchSession => Boolean(session))
     .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
     .slice(0, MAX_STORED_SEARCH_SESSIONS);
-}
-
-function normalizeAiSearchResponse(value: unknown): AiSearchResponse | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-  const response = value as AiSearchResponse;
-  if (!Array.isArray(response.results) || typeof response.totalCount !== 'number') {
-    return null;
-  }
-  return response;
 }
 
 function normalizeSearchMessages(value: unknown): SearchMessage[] {

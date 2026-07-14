@@ -1546,6 +1546,7 @@ dependencies = [
  "tokio",
  "windows-native-keyring-store",
  "zbus-secret-service-keyring-store",
+ "zvec-rust",
 ]
 
 [[package]]
@@ -5860,3 +5861,18 @@ dependencies = [
  "syn 2.0.118",
  "winnow 1.0.3",
 ]
+
+[[package]]
+name = "zvec-rust"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f78b2198f9d1d8db23ed95c94ba55de86998d89f7f49bbcbe617c8ae0336f936"
+dependencies = [
+ "zvec-rust-sys",
+]
+
+[[package]]
+name = "zvec-rust-sys"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5eca131128f4c61419ea553a6cd2aabb35fefc23c0e8a07c91ad86055c36e20"

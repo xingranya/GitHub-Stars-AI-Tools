@@ -213,9 +213,9 @@
 
 ### Task 5.2 zvec 本地向量索引
 
-**描述**：后续在用户明确接受向量模型配置成本后，对 repo name、description、topics、summary_zh、README 片段生成向量。当前上线主链路不进入该任务，不要求向量模型，也不自动调用 Embeddings。
+**描述**：用户主动启用独立 Embedding 配置后，对 repo name、description、language、topics、summary_zh、关键词、标签和 README 片段生成向量；个人笔记不发送给远程服务。未启用时继续使用严格关键词检索。
 
-**zvec 后续计划**：向量库接入采用“SQLite 事实源 + zvec 可重建索引层”的方案，分阶段推进技术验证、`VectorIndexPort` adapter、embedding 后台任务、混合检索和相似项目增强。详细计划见 [zvec 向量能力接入计划](./zvec-vector-roadmap.md)。
+**zvec 实现**：向量库采用“SQLite 事实源 + zvec 可重建索引层”的方案，已完成 Embedding 后台任务、索引恢复、状态面板和混合检索。详细设计见 [zvec 向量能力接入计划](./zvec-vector-roadmap.md)。
 
 **验收标准**：
 
@@ -224,7 +224,7 @@
 - 可按 query embedding 找到相似项目。
 - 没有 Embedding 配置或索引为空时，当前本地知识检索仍可正常工作。
 
-**验证**：后续固定测试查询能召回预期仓库；当前 MVP 验收只确认普通 OpenAI/Anthropic 聊天协议可完成摘要、标签网络、自然语言搜索计划和相似推荐计划。
+**验证**：固定测试覆盖向量持久化、cosine 排序、账号和模型隔离、阈值过滤、严格关键词门槛、上下文限制、结果上限和 SQLite 恢复。
 
 **依赖**：Task 4.2、Task 5.1。
 

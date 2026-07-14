@@ -2,6 +2,7 @@ export type AppSettings = {
   theme: ThemeSettings;
   sync: SyncSettings;
   ai: AISettings;
+  embedding: EmbeddingSettings;
   general: GeneralSettings;
   runtime: RuntimeSettings;
 };
@@ -39,6 +40,17 @@ export type AISettings = {
   enableAutoSummary: boolean;
 };
 
+export type EmbeddingSettings = {
+  enabled: boolean;
+  provider: 'openai' | 'openai-compatible' | 'none';
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  dimensions: number;
+  minScore: number;
+  maxResults: number;
+};
+
 export type GeneralSettings = {
   showWelcomeOnStartup: boolean;
 };
@@ -72,6 +84,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
     apiKey: '',
     model: '',
     enableAutoSummary: false,
+  },
+  embedding: {
+    enabled: false,
+    provider: 'none',
+    baseUrl: '',
+    apiKey: '',
+    model: 'text-embedding-3-small',
+    dimensions: 1536,
+    minScore: 0.72,
+    maxResults: 8,
   },
   general: {
     showWelcomeOnStartup: true,

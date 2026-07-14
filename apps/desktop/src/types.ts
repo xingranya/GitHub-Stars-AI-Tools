@@ -392,7 +392,7 @@ export type AiSearchResult = {
 
 export type AiSearchResponse = {
   query: string;
-  mode: 'local_knowledge' | 'keyword' | 'natural_language' | 'hybrid' | 'ai_enhanced';
+  mode: 'conversation' | 'local_knowledge' | 'keyword' | 'natural_language' | 'vector' | 'hybrid' | 'ai_enhanced';
   results: AiSearchResult[];
   totalCount: number;
   contextQueriesUsed: string[];
@@ -401,6 +401,10 @@ export type AiSearchResponse = {
   aiQuery: string | null;
   aiRationaleZh: string | null;
   aiError: string | null;
+  answerZh: string | null;
+  retrievalMode: 'none' | 'keyword' | 'vector' | 'vector+keyword';
+  vectorApplied: boolean;
+  vectorError: string | null;
 };
 
 /* ===========================================================================
@@ -417,5 +421,5 @@ export type ProfileStats = {
   recentRepos: RepositoryListItem[];
 };
 
-export type { AppSettings, ThemeSettings, SyncSettings, AISettings, GeneralSettings } from './types-settings';
+export type { AppSettings, ThemeSettings, SyncSettings, AISettings, EmbeddingSettings, GeneralSettings } from './types-settings';
 export { DEFAULT_SETTINGS, COLOR_PRESETS } from './types-settings';
