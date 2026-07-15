@@ -6,14 +6,17 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
-    io::{BufReader, Read},
+    io::{BufReader, Read, Write},
     path::{Component, Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
+    time::Duration,
 };
 
 pub const LOCAL_PROVIDER_ID: &str = "local";
 pub const LOCAL_MODEL_ID: &str = "intfloat/multilingual-e5-small";
 pub const LOCAL_MODEL_REVISION: &str = "614241f622f53c4eeff9890bdc4f31cfecc418b3";
+pub const LOCAL_DOWNLOAD_SOURCE_MODELSCOPE: &str = "modelscope";
+pub const LOCAL_DOWNLOAD_SOURCE_HUGGING_FACE: &str = "huggingface";
 pub const LOCAL_DIMENSIONS: usize = 384;
 pub const LOCAL_MAX_LENGTH: usize = 512;
 pub const LOCAL_BATCH_SIZE: usize = 16;
@@ -24,6 +27,31 @@ const LOCAL_SIMILARITY_FLOOR: f32 = 0.70;
 const LOCAL_SIMILARITY_RANGE: f32 = 1.0 - LOCAL_SIMILARITY_FLOOR;
 const MODEL_CACHE_DIR: &str = "embedding-models";
 const READY_MANIFEST_FILE: &str = "ready.json";
+const MODELSCOPE_MODEL_ID: &str = "AI-ModelScope/multilingual-e5-small";
+const MODELSCOPE_MODEL_REVISION: &str = "1565e8a4587b93daf1d719018d6f880645fbd6e3";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalModelDownloadSource {
+    ModelScope,
+    HuggingFace,
+}
+
+impl LocalModelDownloadSource {
+    pub fn parse(value: Option<&str>) -> Result<Self, String> {
+        match value.map(str::trim).filter(|value| !value.is_empty()) {
+            None | Some(LOCAL_DOWNLOAD_SOURCE_MODELSCOPE) => Ok(Self::ModelScope),
+            Some(LOCAL_DOWNLOAD_SOURCE_HUGGING_FACE) => Ok(Self::HuggingFace),
+            Some(value) => Err(format!("不支持的本地模型下载源：{value}")),
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::ModelScope => "ModelScope 国内源",
+            Self::HuggingFace => "Hugging Face 官方源",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -112,13 +140,17 @@ pub trait EmbeddingProviderPort: Send + Sync {
 pub struct EmbeddingService {
     provider: Arc<dyn EmbeddingProviderPort>,
     cache_dir: PathBuf,
+    download_source: LocalModelDownloadSource,
 }
 
 impl EmbeddingService {
     pub fn new(config: ai::EmbeddingRequestConfig, cache_dir: PathBuf) -> Self {
+        let download_source = LocalModelDownloadSource::parse(config.download_source.as_deref())
+            .unwrap_or(LocalModelDownloadSource::ModelScope);
         Self {
             provider: provider_for_config(config),
             cache_dir,
+            download_source,
         }
     }
 
@@ -127,7 +159,11 @@ impl EmbeddingService {
     }
 
     pub fn prepare(&self, on_stage: &dyn Fn(&str)) -> Result<(), String> {
-        self.provider.prepare(&self.cache_dir, on_stage)
+        if self.provider.descriptor().provider == LOCAL_PROVIDER_ID {
+            local_provider().prepare_with_source(&self.cache_dir, self.download_source, on_stage)
+        } else {
+            self.provider.prepare(&self.cache_dir, on_stage)
+        }
     }
 
     pub fn embed_query(&self, text: &str) -> Result<Vec<f32>, String> {
@@ -187,14 +223,13 @@ impl LocalEmbeddingProvider {
         }
         Ok(guard)
     }
-}
 
-impl EmbeddingProviderPort for LocalEmbeddingProvider {
-    fn descriptor(&self) -> EmbeddingProfile {
-        local_profile()
-    }
-
-    fn prepare(&self, cache_dir: &Path, on_stage: &dyn Fn(&str)) -> Result<(), String> {
+    pub fn prepare_with_source(
+        &self,
+        cache_dir: &Path,
+        source: LocalModelDownloadSource,
+        on_stage: &dyn Fn(&str),
+    ) -> Result<(), String> {
         let _prepare_guard = self
             .prepare_lock
             .lock()
@@ -202,7 +237,7 @@ impl EmbeddingProviderPort for LocalEmbeddingProvider {
         if self.is_loaded() {
             return Ok(());
         }
-        let artifacts = prepare_local_artifacts(cache_dir, on_stage)?;
+        let artifacts = prepare_local_artifacts(cache_dir, source, on_stage)?;
         on_stage("loading");
         let model = UserDefinedEmbeddingModel::new(
             fs::read(&artifacts.onnx).map_err(|error| format!("本地模型读取失败：{error}"))?,
@@ -234,6 +269,16 @@ impl EmbeddingProviderPort for LocalEmbeddingProvider {
             .lock()
             .map_err(|_| "本地 Embedding 模型状态已损坏".to_owned())? = Some(loaded);
         Ok(())
+    }
+}
+
+impl EmbeddingProviderPort for LocalEmbeddingProvider {
+    fn descriptor(&self) -> EmbeddingProfile {
+        local_profile()
+    }
+
+    fn prepare(&self, cache_dir: &Path, on_stage: &dyn Fn(&str)) -> Result<(), String> {
+        self.prepare_with_source(cache_dir, LocalModelDownloadSource::ModelScope, on_stage)
     }
 
     fn embed_query(&self, text: &str) -> Result<Vec<f32>, String> {
@@ -517,6 +562,7 @@ struct ReadyArtifact {
 
 fn prepare_local_artifacts(
     app_cache_dir: &Path,
+    source: LocalModelDownloadSource,
     on_stage: &dyn Fn(&str),
 ) -> Result<PreparedArtifacts, String> {
     let root = local_cache_root(app_cache_dir);
@@ -529,23 +575,21 @@ fn prepare_local_artifacts(
     }
     fs::create_dir_all(&root).map_err(|error| format!("本地模型缓存目录创建失败：{error}"))?;
     on_stage("downloading");
-    let api = ApiBuilder::new()
-        .with_cache_dir(root.join("hf"))
-        .with_endpoint("https://huggingface.co".to_owned())
-        .with_progress(false)
-        .with_retries(2)
-        .build()
-        .map_err(|error| format!("模型下载器初始化失败：{error}"))?;
-    let repo = api.repo(Repo::with_revision(
-        LOCAL_MODEL_ID.to_owned(),
-        RepoType::Model,
-        LOCAL_MODEL_REVISION.to_owned(),
-    ));
+    let mut downloaded_paths = match source {
+        LocalModelDownloadSource::ModelScope => download_modelscope_artifacts(&root),
+        LocalModelDownloadSource::HuggingFace => download_hugging_face_artifacts(&root),
+    }
+    .map_err(|error| {
+        format!(
+            "{error}；当前使用{}，可在设置中切换下载源后重试，或检查代理/TUN 模式",
+            source.display_name()
+        )
+    })?;
     let mut ready_files = Vec::with_capacity(ARTIFACTS.len());
     for artifact in ARTIFACTS {
-        let path = repo
-            .get(artifact.path)
-            .map_err(|error| format!("模型工件 {} 下载失败：{error}", artifact.path))?;
+        let path = downloaded_paths
+            .remove(artifact.path)
+            .ok_or_else(|| format!("模型工件 {} 下载后未找到", artifact.path))?;
         if let Err(error) = verify_artifact(&path, *artifact) {
             clear_invalid_local_cache(&root)?;
             return Err(format!("{error}；损坏缓存已清理，请重试下载"));
@@ -570,6 +614,117 @@ fn prepare_local_artifacts(
     verified_ready_artifacts(&root)
 }
 
+fn download_hugging_face_artifacts(root: &Path) -> Result<HashMap<&'static str, PathBuf>, String> {
+    let api = ApiBuilder::new()
+        .with_cache_dir(root.join("hf"))
+        .with_endpoint("https://huggingface.co".to_owned())
+        .with_progress(false)
+        .with_retries(2)
+        .build()
+        .map_err(|error| format!("模型下载器初始化失败：{error}"))?;
+    let repo = api.repo(Repo::with_revision(
+        LOCAL_MODEL_ID.to_owned(),
+        RepoType::Model,
+        LOCAL_MODEL_REVISION.to_owned(),
+    ));
+    let mut paths = HashMap::with_capacity(ARTIFACTS.len());
+    for artifact in ARTIFACTS {
+        let path = repo
+            .get(artifact.path)
+            .map_err(|error| format!("模型工件 {} 下载失败：{error}", artifact.path))?;
+        paths.insert(artifact.path, path);
+    }
+    Ok(paths)
+}
+
+fn download_modelscope_artifacts(root: &Path) -> Result<HashMap<&'static str, PathBuf>, String> {
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|error| format!("ModelScope 下载器初始化失败：{error}"))?;
+    let mut paths = HashMap::with_capacity(ARTIFACTS.len());
+    for artifact in ARTIFACTS {
+        let path = download_modelscope_artifact(&client, root, *artifact)?;
+        paths.insert(artifact.path, path);
+    }
+    Ok(paths)
+}
+
+fn download_modelscope_artifact(
+    client: &reqwest::blocking::Client,
+    root: &Path,
+    artifact: ArtifactSpec,
+) -> Result<PathBuf, String> {
+    let target = safe_cache_path(&root.join("modelscope"), artifact.path)?;
+    if target.is_file() && verify_artifact(&target, artifact).is_ok() {
+        return Ok(target);
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("模型工件目录创建失败（{}）：{error}", parent.display()))?;
+    }
+    let file_name = target
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| format!("模型工件路径无效：{}", target.display()))?;
+    let temporary = target.with_file_name(format!("{file_name}.part"));
+    let url = modelscope_artifact_url(artifact.path);
+    let mut last_error = String::new();
+
+    for attempt in 1..=3 {
+        let result = (|| -> Result<(), String> {
+            if temporary.exists() {
+                fs::remove_file(&temporary).map_err(|error| {
+                    format!("模型临时文件清理失败（{}）：{error}", temporary.display())
+                })?;
+            }
+            let mut response = client
+                .get(&url)
+                .send()
+                .map_err(|error| format!("请求失败：{error}"))?
+                .error_for_status()
+                .map_err(|error| format!("服务器返回错误：{error}"))?;
+            let mut file = fs::File::create(&temporary).map_err(|error| {
+                format!("模型临时文件创建失败（{}）：{error}", temporary.display())
+            })?;
+            std::io::copy(&mut response, &mut file)
+                .map_err(|error| format!("模型文件写入失败：{error}"))?;
+            file.flush()
+                .map_err(|error| format!("模型文件刷新失败：{error}"))?;
+            file.sync_all()
+                .map_err(|error| format!("模型文件落盘失败：{error}"))?;
+            verify_artifact(&temporary, artifact)?;
+            if target.exists() {
+                fs::remove_file(&target).map_err(|error| {
+                    format!("旧模型工件清理失败（{}）：{error}", target.display())
+                })?;
+            }
+            fs::rename(&temporary, &target)
+                .map_err(|error| format!("模型工件激活失败：{error}"))?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => return Ok(target),
+            Err(error) if attempt < 3 => last_error = error,
+            Err(error) => {
+                let _ = fs::remove_file(&temporary);
+                return Err(format!(
+                    "模型工件 {} 下载失败（已重试 3 次）：{error}",
+                    artifact.path
+                ));
+            }
+        }
+    }
+
+    Err(format!("模型工件 {} 下载失败：{last_error}", artifact.path))
+}
+
+fn modelscope_artifact_url(path: &str) -> String {
+    format!(
+        "https://modelscope.cn/models/{MODELSCOPE_MODEL_ID}/resolve/{MODELSCOPE_MODEL_REVISION}/{path}"
+    )
+}
+
 fn clear_invalid_local_cache(root: &Path) -> Result<(), String> {
     for file_name in [READY_MANIFEST_FILE, "ready.json.tmp"] {
         let path = root.join(file_name);
@@ -578,14 +733,16 @@ fn clear_invalid_local_cache(root: &Path) -> Result<(), String> {
                 .map_err(|error| format!("损坏模型标记清理失败（{}）：{error}", path.display()))?;
         }
     }
-    let download_cache = root.join("hf");
-    if download_cache.exists() {
-        fs::remove_dir_all(&download_cache).map_err(|error| {
-            format!(
-                "损坏模型缓存清理失败（{}）：{error}",
-                download_cache.display()
-            )
-        })?;
+    for cache_name in ["hf", "modelscope"] {
+        let download_cache = root.join(cache_name);
+        if download_cache.exists() {
+            fs::remove_dir_all(&download_cache).map_err(|error| {
+                format!(
+                    "损坏模型缓存清理失败（{}）：{error}",
+                    download_cache.display()
+                )
+            })?;
+        }
     }
     Ok(())
 }
@@ -790,6 +947,28 @@ mod tests {
     }
 
     #[test]
+    fn local_download_source_defaults_to_modelscope_and_keeps_official_option() {
+        assert_eq!(
+            LocalModelDownloadSource::parse(None).expect("默认下载源应有效"),
+            LocalModelDownloadSource::ModelScope
+        );
+        assert_eq!(
+            LocalModelDownloadSource::parse(Some(LOCAL_DOWNLOAD_SOURCE_HUGGING_FACE))
+                .expect("官方下载源应有效"),
+            LocalModelDownloadSource::HuggingFace
+        );
+        assert!(LocalModelDownloadSource::parse(Some("unknown")).is_err());
+    }
+
+    #[test]
+    fn modelscope_download_is_pinned_to_matching_model_revision() {
+        let url = modelscope_artifact_url("onnx/model.onnx");
+        assert!(url.contains(MODELSCOPE_MODEL_ID));
+        assert!(url.contains(MODELSCOPE_MODEL_REVISION));
+        assert!(url.ends_with("/onnx/model.onnx"));
+    }
+
+    #[test]
     fn e5_prefixes_and_batch_validation_preserve_protocol_order() {
         assert_eq!(QUERY_PREFIX, "query: ");
         assert_eq!(PASSAGE_PREFIX, "passage: ");
@@ -816,15 +995,19 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("hf")).expect("应能创建损坏缓存目录");
+        fs::create_dir_all(root.join("modelscope")).expect("应能创建国内源损坏缓存目录");
         fs::write(root.join(READY_MANIFEST_FILE), b"invalid").expect("应能写入损坏完成标记");
         fs::write(root.join("ready.json.tmp"), b"partial").expect("应能写入临时完成标记");
         fs::write(root.join("hf").join("artifact"), b"invalid").expect("应能写入损坏工件");
+        fs::write(root.join("modelscope").join("artifact"), b"invalid")
+            .expect("应能写入国内源损坏工件");
 
         clear_invalid_local_cache(&root).expect("应能清理损坏模型缓存");
 
         assert!(!root.join(READY_MANIFEST_FILE).exists());
         assert!(!root.join("ready.json.tmp").exists());
         assert!(!root.join("hf").exists());
+        assert!(!root.join("modelscope").exists());
         let _ = fs::remove_dir_all(&root);
     }
 

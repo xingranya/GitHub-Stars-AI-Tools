@@ -1372,6 +1372,7 @@ fn embedding_request_config_from_settings_value(
     Some(ai::EmbeddingRequestConfig {
         enabled,
         provider,
+        download_source: json_string_field(embedding, "downloadSource"),
         api_key: String::new(),
         base_url: json_string_field(embedding, "baseUrl").filter(|value| !value.trim().is_empty()),
         model: json_string_field(embedding, "model").unwrap_or_default(),
@@ -1436,6 +1437,7 @@ fn local_embedding_config() -> ai::EmbeddingRequestConfig {
     ai::EmbeddingRequestConfig {
         enabled: true,
         provider: embedding::LOCAL_PROVIDER_ID.to_owned(),
+        download_source: Some(embedding::LOCAL_DOWNLOAD_SOURCE_MODELSCOPE.to_owned()),
         api_key: String::new(),
         base_url: None,
         model: embedding::LOCAL_MODEL_ID.to_owned(),
@@ -1552,10 +1554,12 @@ fn embedding_snapshot_is_ready(
 fn run_local_embedding_setup(
     app_handle: tauri::AppHandle,
     account_id: String,
+    download_source: Option<String>,
 ) -> Result<embedding::EmbeddingRuntimeStatus, String> {
     if account_id.trim().is_empty() {
         return Err("缺少 GitHub 账号编号，无法建立向量索引".to_owned());
     }
+    let download_source = embedding::LocalModelDownloadSource::parse(download_source.as_deref())?;
     embedding::begin_runtime_job(&account_id)?;
     let result: Result<embedding::EmbeddingRuntimeStatus, String> = (|| {
         emit_embedding_runtime_status(
@@ -1564,7 +1568,10 @@ fn run_local_embedding_setup(
             embedding::EmbeddingRuntimeStatus::local(
                 &account_id,
                 "downloading",
-                "正在下载本地 Embedding 模型",
+                format!(
+                    "正在从 {} 下载本地 Embedding 模型",
+                    download_source.display_name()
+                ),
             ),
         );
         let cache_dir = app_handle
@@ -1573,11 +1580,18 @@ fn run_local_embedding_setup(
             .map_err(|error| format!("无法定位模型缓存目录：{error}"))?;
         let provider = embedding::local_provider();
         let stage_account = account_id.clone();
-        provider.prepare(&cache_dir, &|stage| {
+        provider.prepare_with_source(&cache_dir, download_source, &|stage| {
             let (state, message) = match stage {
                 "verifying" => ("verifying", "正在校验本地模型工件"),
                 "loading" => ("loading", "正在加载本地 Embedding 模型"),
-                _ => ("downloading", "正在下载本地 Embedding 模型"),
+                _ => (
+                    "downloading",
+                    if download_source == embedding::LocalModelDownloadSource::ModelScope {
+                        "正在从 ModelScope 国内源下载本地模型"
+                    } else {
+                        "正在从 Hugging Face 官方源下载本地模型"
+                    },
+                ),
             };
             emit_embedding_runtime_status(
                 &app_handle,
@@ -1710,7 +1724,11 @@ fn run_embedding_maintenance_once(app_handle: &tauri::AppHandle) -> Result<(), S
         .list_dirty_embedding_repositories(&account_id, 1)?
         .is_empty();
     if dirty || status.state == "partial" {
-        run_local_embedding_setup(app_handle.clone(), account_id)?;
+        run_local_embedding_setup(
+            app_handle.clone(),
+            account_id,
+            config.download_source.clone(),
+        )?;
     }
     Ok(())
 }
@@ -1782,7 +1800,11 @@ async fn enable_local_embedding(
     request: EmbeddingRuntimeRequest,
 ) -> Result<embedding::EmbeddingRuntimeStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        run_local_embedding_setup(app_handle, request.account_id)
+        let config = request
+            .embedding_config
+            .or(load_saved_embedding_request_config(&app_handle)?)
+            .unwrap_or_else(local_embedding_config);
+        run_local_embedding_setup(app_handle, request.account_id, config.download_source)
     })
     .await
     .map_err(|error| format!("启用本地 Embedding 失败：{error}"))?
@@ -3496,6 +3518,16 @@ fn list_repository_languages(
     let storage = AppStorage::from_app_handle(&app_handle)?;
 
     storage.list_repository_languages(Some(&request.account_id))
+}
+
+#[tauri::command]
+fn get_repository_filter_counts(
+    app_handle: tauri::AppHandle,
+    request: ListTagsRequest,
+) -> Result<storage::RepositoryFilterCounts, String> {
+    let storage = AppStorage::from_app_handle(&app_handle)?;
+
+    storage.get_repository_filter_counts(&request.account_id)
 }
 
 #[tauri::command]
@@ -6192,6 +6224,7 @@ pub fn run() {
             fetch_repository_readmes,
             list_repositories,
             list_repository_languages,
+            get_repository_filter_counts,
             get_repository_detail,
             list_tags,
             create_tag,

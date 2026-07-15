@@ -37,6 +37,8 @@ pub struct AiRequestConfig {
 pub struct EmbeddingRequestConfig {
     pub enabled: bool,
     pub provider: String,
+    #[serde(default)]
+    pub download_source: Option<String>,
     pub api_key: String,
     pub base_url: Option<String>,
     pub model: String,
@@ -3245,6 +3247,7 @@ mod tests {
         let config = EmbeddingRequestConfig {
             enabled: true,
             provider: "openai-compatible".to_owned(),
+            download_source: None,
             api_key: String::new(),
             base_url: Some(url),
             model: "embedding-test".to_owned(),
@@ -3272,6 +3275,7 @@ mod tests {
         let config = EmbeddingRequestConfig {
             enabled: true,
             provider: "openai-compatible".to_owned(),
+            download_source: None,
             api_key: String::new(),
             base_url: Some(url),
             model: "embedding-test".to_owned(),
