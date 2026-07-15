@@ -724,6 +724,7 @@ mod tests {
             ai::EmbeddingRequestConfig {
                 enabled: true,
                 provider: embedding::LOCAL_PROVIDER_ID.to_owned(),
+                download_source: Some(embedding::LOCAL_DOWNLOAD_SOURCE_MODELSCOPE.to_owned()),
                 api_key: String::new(),
                 base_url: None,
                 model: embedding::LOCAL_MODEL_ID.to_owned(),
