@@ -6,6 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build",
+    "beforeBundleCommand": "node scripts/prepare-native-runtime.mjs",
     "devUrl": "http://127.0.0.1:1420",
     "frontendDist": "../dist"
   },

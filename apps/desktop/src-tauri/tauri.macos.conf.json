@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "-",
+      "files": {
+        "Frameworks/libzvec_c_api.dylib": "runtime/libzvec_c_api.dylib"
+      }
+    }
+  }
+}

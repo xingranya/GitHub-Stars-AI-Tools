@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "linux": {
+      "appimage": {
+        "files": {
+          "usr/lib/github-stars-ai-tools/libzvec_c_api.so": "runtime/libzvec_c_api.so"
+        }
+      },
+      "deb": {
+        "files": {
+          "/usr/lib/github-stars-ai-tools/libzvec_c_api.so": "runtime/libzvec_c_api.so"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/lib/github-stars-ai-tools/libzvec_c_api.so": "runtime/libzvec_c_api.so"
+        }
+      }
+    }
+  }
+}

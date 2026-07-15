@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "runtime/zvec_c_api.dll": "zvec_c_api.dll"
+    }
+  }
+}

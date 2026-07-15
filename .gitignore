@@ -3,6 +3,7 @@ node_modules/
 dist/
 build/
 target/
+apps/desktop/src-tauri/runtime/
 
 # Tauri 本地打包产物
 *.app/
