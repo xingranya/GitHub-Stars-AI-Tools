@@ -83,7 +83,7 @@ export function useSettings() {
     let embeddingApiKey = '';
     if (shouldReadSavedEmbeddingApiKey(nextSettings.embedding)) {
       try {
-        embeddingApiKey = await readSavedEmbeddingApiKeyPlaceholder();
+        embeddingApiKey = await readSavedEmbeddingApiKeyPlaceholder(nextSettings.embedding);
       } catch (error) {
         embeddingApiKey = '';
         nextError = mergeSettingsError(
@@ -118,12 +118,14 @@ export function useSettings() {
     const partialAiChangesProvider = Boolean(
       partial.ai?.provider && partial.ai.provider !== settings.ai.provider,
     );
-    const partialEmbeddingChangesProvider = Boolean(
-      partial.embedding?.provider && partial.embedding.provider !== settings.embedding.provider,
-    );
     let nextAi = normalizeAiSettings(partial.ai ? { ...settings.ai, ...partial.ai } : settings.ai);
     let nextEmbedding = normalizeEmbeddingSettings(
       partial.embedding ? { ...settings.embedding, ...partial.embedding } : settings.embedding,
+    );
+    const partialEmbeddingChangesCredentialScope = Boolean(
+      partial.embedding
+      && (nextEmbedding.provider !== settings.embedding.provider
+        || nextEmbedding.baseUrl !== settings.embedding.baseUrl.trim()),
     );
     let nextError: string | null = null;
 
@@ -140,22 +142,22 @@ export function useSettings() {
       }
     }
 
-    if (partial.embedding && partialEmbeddingChangesProvider && !partialEmbeddingIncludesApiKey) {
-      try {
-        nextEmbedding = {
-          ...nextEmbedding,
-          apiKey: nextEmbedding.provider === 'none'
-            ? nextEmbedding.apiKey
-            : shouldReadSavedEmbeddingApiKey(nextEmbedding)
-              ? await readSavedEmbeddingApiKeyPlaceholder()
-              : '',
-        };
-      } catch (error) {
+    if (partial.embedding && partialEmbeddingChangesCredentialScope && !partialEmbeddingIncludesApiKey) {
+      if (nextEmbedding.provider === 'openai' || nextEmbedding.provider === 'openai-compatible') {
+        try {
+          nextEmbedding = {
+            ...nextEmbedding,
+            apiKey: await readSavedEmbeddingApiKeyPlaceholder(nextEmbedding),
+          };
+        } catch (error) {
+          nextEmbedding = { ...nextEmbedding, apiKey: '' };
+          nextError = mergeSettingsError(
+            nextError,
+            `Embedding Key 状态读取失败，请检查系统凭据管理器权限：${toErrorMessage(error)}`,
+          );
+        }
+      } else {
         nextEmbedding = { ...nextEmbedding, apiKey: '' };
-        nextError = mergeSettingsError(
-          nextError,
-          `Embedding Key 状态读取失败，请检查系统凭据管理器权限：${toErrorMessage(error)}`,
-        );
       }
     }
 
@@ -186,7 +188,7 @@ export function useSettings() {
       if (partialEmbeddingIncludesApiKey) {
         try {
           setEmbeddingKeySaveStatus('saving');
-          await persistEmbeddingApiKey(partial.embedding?.apiKey ?? '');
+          await persistEmbeddingApiKey(partial.embedding?.apiKey ?? '', updated.embedding);
           setEmbeddingKeySaveStatus((partial.embedding?.apiKey ?? '').trim() ? 'saved' : 'idle');
         } catch (error) {
           setEmbeddingKeySaveStatus('error');
@@ -222,7 +224,7 @@ export function useSettings() {
   async function flushEmbeddingKey(apiKey = settings.embedding.apiKey) {
     try {
       setEmbeddingKeySaveStatus('saving');
-      await persistEmbeddingApiKey(apiKey);
+      await persistEmbeddingApiKey(apiKey, settings.embedding);
       const normalizedApiKey = apiKey.trim();
       const updated = {
         ...settings,
@@ -366,13 +368,20 @@ export function useSettings() {
     }
   }
 
-  async function persistEmbeddingApiKey(apiKey: string) {
+  async function persistEmbeddingApiKey(
+    apiKey: string,
+    embedding: AppSettings['embedding'],
+  ) {
     const normalizedApiKey = apiKey.trim();
     if (isSavedAiApiKeyPlaceholder(normalizedApiKey)) {
       return;
     }
     if (normalizedApiKey) {
-      await invoke('save_embedding_api_key', { apiKey: normalizedApiKey });
+      await invoke('save_embedding_api_key', {
+        provider: embedding.provider,
+        baseUrl: embedding.baseUrl || null,
+        apiKey: normalizedApiKey,
+      });
     } else {
       await invoke('clear_embedding_api_key');
     }
@@ -428,8 +437,11 @@ function shouldReadSavedEmbeddingApiKey(embedding: AppSettings['embedding']) {
   return embedding.provider !== 'none' && shouldFlushEmbeddingApiKey(embedding);
 }
 
-async function readSavedEmbeddingApiKeyPlaceholder() {
-  const hasSavedApiKey = await invoke<boolean>('has_embedding_api_key');
+async function readSavedEmbeddingApiKeyPlaceholder(embedding: AppSettings['embedding']) {
+  const hasSavedApiKey = await invoke<boolean>('has_embedding_api_key', {
+    provider: embedding.provider,
+    baseUrl: embedding.baseUrl || null,
+  });
   return hasSavedApiKey ? SAVED_AI_API_KEY_PLACEHOLDER : '';
 }
 
