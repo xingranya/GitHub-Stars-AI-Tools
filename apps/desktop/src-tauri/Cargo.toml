@@ -1,6 +1,6 @@
 [package]
 name = "gsat-desktop"
-version = "1.5.1"
+version = "1.5.3"
 description = "本地优先的 GitHub-Stars-AI-Tools 桌面应用"
 authors = ["xingranya"]
 edition = "2021"
