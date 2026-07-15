@@ -20,7 +20,7 @@ pnpm package:desktop
 pnpm package:desktop:dmg
 ```
 
-`pnpm package:desktop` 会先构建共享包，再执行真实 Tauri bundle 打包。macOS 可用 `pnpm package:desktop:dmg` 生成拖拽安装 DMG。
+`pnpm package:desktop` 会先构建共享包，再执行真实 Tauri bundle 打包。macOS 可用 `pnpm package:desktop:dmg` 生成拖拽安装 DMG，Finder 中应用与 Applications 图标均使用 192px 大图标布局，生成后会执行 DMG 完整性校验。
 
 ## GitHub Actions 发版
 
@@ -34,9 +34,11 @@ pnpm package:desktop:dmg
 
 工作流会构建并上传：
 
-- macOS：Apple Silicon 与 Intel 两套 `.dmg`
+- macOS：Apple Silicon `.dmg` 和 updater `.app.tar.gz`
 - Windows：`.msi` 或 `setup.exe`
 - Linux：`.deb`、`.rpm` 或 `.AppImage`
+
+`v1.5.0` 的本地 Embedding 运行时只提供 `aarch64-apple-darwin` 预编译依赖，因此不再构建 macOS Intel 安装包。发布结束后，工作流会核对三平台安装包、签名文件和 `latest.json`，任一产物缺失都会使发布任务失败。
 
 ## 应用内更新
 
