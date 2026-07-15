@@ -403,6 +403,17 @@ jobs:
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-22.04
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Test updater manifest normalization
+        run: node --test apps/desktop/scripts/normalize-updater-manifest.test.mjs
+
       - name: Verify installers and updater manifest
         shell: bash
         env:
@@ -457,7 +468,21 @@ jobs:
             --dir "$manifest_dir" \
             --clobber
           manifest="$manifest_dir/latest.json"
+          node apps/desktop/scripts/normalize-updater-manifest.mjs \
+            "$manifest" \
+            "$GITHUB_REPOSITORY" \
+            "$TAG_NAME" \
+            "$RELEASE_VERSION"
+          gh release upload "$TAG_NAME" \
+            "$manifest" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
           jq -e --arg version "$RELEASE_VERSION" '.version == $version' "$manifest" > /dev/null
+          public_download_prefix="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG_NAME}/"
+          jq -e --arg prefix "$public_download_prefix" '
+            [.platforms[].url | startswith($prefix)] | all
+          ' "$manifest" > /dev/null
           for platform in darwin-aarch64 windows-x86_64 linux-x86_64; do
             jq -e --arg platform "$platform" '
               .platforms[$platform]
@@ -466,4 +491,10 @@ jobs:
             ' "$manifest" > /dev/null
           done
           jq -e '.platforms["darwin-x86_64"] == null' "$manifest" > /dev/null
+          while IFS= read -r updater_url; do
+            curl --fail --silent --show-error --location \
+              --range 0-0 \
+              --output /dev/null \
+              "$updater_url"
+          done < <(jq -r '.platforms[].url' "$manifest" | sort -u)
           echo "三平台安装包、签名文件和 updater 清单均已通过校验。"
