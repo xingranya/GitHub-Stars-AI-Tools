@@ -1,5 +1,28 @@
 # TODO：GitHub-Stars-AI-Tools
 
+## Phase 11: Local Embedding v1.5.0
+
+- [x] Task 11.0: 冻结本地模型规格
+  - Status: 已固定 multilingual-e5-small、revision、SHA-256 manifest、状态机和三平台发布矩阵。
+  - Acceptance: 实施期间不再跟随 Hugging Face `main`，不重置用户数据库。
+  - Files: `docs/plan/local-embedding-v1.md`、`docs/progress/phase-11-local-embedding.md`
+
+- [x] Task 11.1: 完成本地模型运行时
+  - Status: 已完成固定 revision 下载、工件校验、缓存重载、状态事件和 single-flight。
+  - Acceptance: 首次确认下载后完成校验和加载，后续断网可用，失败可重试。
+
+- [x] Task 11.2: 完成自动向量建库与维护
+  - Status: 已完成 batch 16、profileId 分桶、dirty queue、SQLite 恢复和 zvec 原子替换。
+  - Acceptance: 批量生成、内容失效、SQLite 恢复和 zvec 原子替换均可验证。
+
+- [x] Task 11.3: 完成一键启用体验
+  - Status: 已完成首次下载确认、阶段状态、重试、缓存删除和远程高级设置。
+  - Acceptance: 普通设置只需开关；远程 Embedding 位于高级设置；状态和错误真实可见。
+
+- [ ] Task 11.4: 完成质量与发布验收
+  - Status: 本地真实模型、40 条中英质量集、Apple Silicon release 和 `.app` 已通过；待 Windows/Linux CI 与三端桌面交互验收。
+  - Acceptance: 中英质量门槛、离线测试和 macOS arm64/Windows x64/Linux x64 构建全部通过。
+
 ## Phase 1: Foundation
 
 - [x] Task 1.1: 初始化 Tauri + React 项目
