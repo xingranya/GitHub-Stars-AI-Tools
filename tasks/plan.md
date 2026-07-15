@@ -103,6 +103,14 @@
 - [ ] Task 10.2: `VectorIndexPort` 与 zvec adapter
 - [ ] Task 10.3: zvec 混合语义检索接入
 
+### Phase 11: Local Embedding v1.5.0
+
+- [x] Task 11.0: 冻结本地模型、工件校验与发布矩阵
+- [x] Task 11.1: 本地模型下载、校验、加载和运行状态
+- [x] Task 11.2: 批量生成、原子建库和增量维护
+- [x] Task 11.3: 一键启用界面与远程高级设置
+- [ ] Task 11.4: 中英质量、离线恢复和三平台发布验收
+
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |
