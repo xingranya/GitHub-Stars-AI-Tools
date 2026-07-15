@@ -386,6 +386,14 @@ pub struct RepositoryListPage {
     pub offset: usize,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryFilterCounts {
+    pub total_count: usize,
+    pub language_counts: HashMap<String, usize>,
+    pub tag_counts: HashMap<String, usize>,
+}
+
 pub struct RepositoryListFilters<'a> {
     pub account_id: Option<&'a str>,
     pub keyword: Option<&'a str>,
@@ -557,6 +565,12 @@ struct RepositoryLibrarySnapshotRepositoryRow {
 #[derive(Deserialize)]
 struct RepositoryLanguageRow {
     language: String,
+}
+
+#[derive(Deserialize)]
+struct RepositoryFilterCountRow {
+    value: String,
+    count: usize,
 }
 
 #[derive(Deserialize)]
@@ -1137,6 +1151,61 @@ ORDER BY language COLLATE NOCASE ASC;
         )?;
 
         Ok(rows.into_iter().map(|row| row.language).collect())
+    }
+
+    /// 统计当前账号全部活跃仓库的语言和标签分布，供筛选器显示稳定数量。
+    pub fn get_repository_filter_counts(
+        &self,
+        account_id: &str,
+    ) -> Result<RepositoryFilterCounts, String> {
+        let language_sql = format!(
+            r#"
+.mode json
+SELECT language AS value, COUNT(DISTINCT id) AS count
+FROM repositories
+WHERE sync_status = 'active'
+  AND account_id = {account_id}
+  AND language IS NOT NULL
+  AND TRIM(language) != ''
+GROUP BY language
+ORDER BY language COLLATE NOCASE ASC;
+"#,
+            account_id = sql_text(account_id),
+        );
+        let tag_sql = format!(
+            r#"
+.mode json
+SELECT rt.tag_id AS value, COUNT(DISTINCT rt.repo_id) AS count
+FROM repo_tags rt
+JOIN repositories r ON r.id = rt.repo_id
+JOIN tags t ON t.id = rt.tag_id AND t.account_id = r.account_id
+WHERE r.sync_status = 'active'
+  AND r.account_id = {account_id}
+GROUP BY rt.tag_id
+ORDER BY t.name COLLATE NOCASE ASC;
+"#,
+            account_id = sql_text(account_id),
+        );
+        let language_counts = parse_json_rows::<RepositoryFilterCountRow>(
+            &self.query_sql(&language_sql)?,
+            "SQLite 语言筛选数量解析失败",
+        )?
+        .into_iter()
+        .map(|row| (row.value, row.count))
+        .collect();
+        let tag_counts = parse_json_rows::<RepositoryFilterCountRow>(
+            &self.query_sql(&tag_sql)?,
+            "SQLite 标签筛选数量解析失败",
+        )?
+        .into_iter()
+        .map(|row| (row.value, row.count))
+        .collect();
+
+        Ok(RepositoryFilterCounts {
+            total_count: self.count_active_repositories_for_account(account_id)?,
+            language_counts,
+            tag_counts,
+        })
     }
 
     pub fn get_repository_detail(
@@ -5278,6 +5347,45 @@ INSERT INTO github_accounts (id, login, token_ref) VALUES ('1001', 'alice', 'tes
         assert_eq!(repositories[0].id, "1001:42");
         assert_eq!(repositories[0].full_name, "new-owner/new-name");
 
+        let _ = remove_sqlite_database_files(&database_path);
+    }
+
+    #[test]
+    fn repository_filter_counts_only_include_active_account_repositories() {
+        let (storage, database_path) = temp_storage("repository-filter-counts");
+        storage
+            .execute_sql(
+                r#"
+PRAGMA foreign_keys = ON;
+INSERT INTO github_accounts (id, login, token_ref) VALUES ('1001', 'alice', 'test');
+INSERT INTO repositories (id, account_id, owner, name, full_name, language, topics_json, html_url, stars_count, forks_count, starred_at, sync_status)
+VALUES
+  ('1001:1', '1001', 'owner', 'rust-one', 'owner/rust-one', 'Rust', '[]', 'https://github.com/owner/rust-one', 10, 1, '2026-01-04T00:00:00Z', 'active'),
+  ('1001:2', '1001', 'owner', 'rust-two', 'owner/rust-two', 'Rust', '[]', 'https://github.com/owner/rust-two', 10, 1, '2026-01-03T00:00:00Z', 'active'),
+  ('1001:3', '1001', 'owner', 'typescript', 'owner/typescript', 'TypeScript', '[]', 'https://github.com/owner/typescript', 10, 1, '2026-01-02T00:00:00Z', 'active'),
+  ('1001:4', '1001', 'owner', 'removed', 'owner/removed', 'Python', '[]', 'https://github.com/owner/removed', 10, 1, '2026-01-01T00:00:00Z', 'removed');
+INSERT INTO tags (id, account_id, name) VALUES
+  ('tag:backend', '1001', '后端'),
+  ('tag:web', '1001', '前端');
+INSERT INTO repo_tags (repo_id, tag_id) VALUES
+  ('1001:1', 'tag:backend'),
+  ('1001:2', 'tag:backend'),
+  ('1001:3', 'tag:web'),
+  ('1001:4', 'tag:backend');
+"#,
+            )
+            .expect("写入筛选数量测试数据");
+
+        let counts = storage
+            .get_repository_filter_counts("1001")
+            .expect("应能统计仓库筛选数量");
+
+        assert_eq!(counts.total_count, 3);
+        assert_eq!(counts.language_counts.get("Rust"), Some(&2));
+        assert_eq!(counts.language_counts.get("TypeScript"), Some(&1));
+        assert_eq!(counts.language_counts.get("Python"), None);
+        assert_eq!(counts.tag_counts.get("tag:backend"), Some(&2));
+        assert_eq!(counts.tag_counts.get("tag:web"), Some(&1));
         let _ = remove_sqlite_database_files(&database_path);
     }
 

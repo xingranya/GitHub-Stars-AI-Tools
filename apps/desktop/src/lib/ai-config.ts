@@ -8,7 +8,7 @@ export type BackendAiRequestConfig = Pick<AISettings, 'provider' | 'baseUrl' | '
 
 export type BackendEmbeddingRequestConfig = Pick<
   EmbeddingSettings,
-  'enabled' | 'provider' | 'baseUrl' | 'model' | 'dimensions' | 'minScore' | 'maxResults'
+  'enabled' | 'provider' | 'downloadSource' | 'baseUrl' | 'model' | 'dimensions' | 'minScore' | 'maxResults'
 > & {
   apiKey: '';
 };
@@ -26,6 +26,7 @@ export function toBackendEmbeddingRequestConfig(embedding: EmbeddingSettings): B
   return {
     enabled: embedding.enabled,
     provider: embedding.provider,
+    downloadSource: embedding.downloadSource,
     baseUrl: embedding.baseUrl,
     apiKey: '',
     model: embedding.model,
@@ -44,10 +45,12 @@ export function normalizeEmbeddingSettings(embedding: EmbeddingSettings): Embedd
     : DEFAULT_SETTINGS.embedding.provider;
   const provider = configuredProvider === 'none' ? 'local' : configuredProvider;
   const enabled = configuredProvider !== 'none' && Boolean(embedding.enabled);
+  const downloadSource = embedding.downloadSource === 'huggingface' ? 'huggingface' : 'modelscope';
   if (provider === 'local') {
     return {
       ...DEFAULT_SETTINGS.embedding,
       enabled,
+      downloadSource,
       apiKey: '',
       minScore: configuredProvider === 'none'
         ? DEFAULT_SETTINGS.embedding.minScore
@@ -58,6 +61,7 @@ export function normalizeEmbeddingSettings(embedding: EmbeddingSettings): Embedd
   return {
     enabled,
     provider,
+    downloadSource,
     baseUrl: typeof embedding.baseUrl === 'string' ? embedding.baseUrl.trim() : '',
     apiKey: typeof embedding.apiKey === 'string' ? embedding.apiKey : '',
     model: typeof embedding.model === 'string' ? embedding.model.trim() : '',

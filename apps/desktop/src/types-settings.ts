@@ -43,6 +43,7 @@ export type AISettings = {
 export type EmbeddingSettings = {
   enabled: boolean;
   provider: 'local' | 'openai' | 'openai-compatible' | 'none';
+  downloadSource: 'modelscope' | 'huggingface';
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -88,6 +89,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   embedding: {
     enabled: false,
     provider: 'local',
+    downloadSource: 'modelscope',
     baseUrl: '',
     apiKey: '',
     model: 'intfloat/multilingual-e5-small',

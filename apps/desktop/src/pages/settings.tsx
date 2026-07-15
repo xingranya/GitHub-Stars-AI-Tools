@@ -1678,7 +1678,7 @@ function EmbeddingSettingsPanel({
     setStatus(null);
     setMessage(null);
     setPendingLocalEmbedding(null);
-  }, [accountId, embedding.enabled, embedding.provider, embedding.baseUrl, embedding.model, embedding.dimensions]);
+  }, [accountId, embedding.enabled, embedding.provider, embedding.downloadSource, embedding.baseUrl, embedding.model, embedding.dimensions]);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -1977,6 +1977,61 @@ function EmbeddingSettingsPanel({
           </div>
         </div>
 
+        {embedding.provider === 'local' && (
+          <div className="border-y border-outline-variant/30 py-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="font-body-md text-sm font-medium text-on-surface">模型下载源</p>
+                <p className="mt-1 max-w-2xl font-body-md text-xs leading-relaxed text-on-surface-variant">
+                  中国大陆网络建议使用国内源。若下载提示 Connection refused，请切换下载源后重试，或检查代理的 TUN 模式。
+                </p>
+              </div>
+              <div
+                className="grid shrink-0 grid-cols-2 rounded-lg border border-outline-variant/40 bg-surface-container-low p-1"
+                role="radiogroup"
+                aria-label="本地模型下载源"
+              >
+                {([
+                  { value: 'modelscope', label: '国内源', detail: 'ModelScope' },
+                  { value: 'huggingface', label: '官方源', detail: 'Hugging Face' },
+                ] as const).map((source) => {
+                  const selected = embedding.downloadSource === source.value;
+                  return (
+                    <button
+                      key={source.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      disabled={isPreparing}
+                      onClick={() => {
+                        void settingsHook.updateEmbedding({ downloadSource: source.value });
+                        setMessage({
+                          type: 'info',
+                          text: status?.modelReady
+                            ? `已切换为${source.label}，下次重新下载模型时生效。`
+                            : `已切换为${source.label}，重试时将从 ${source.detail} 下载。`,
+                        });
+                      }}
+                      className={`min-w-28 rounded-md px-3 py-2 text-left transition-colors disabled:opacity-60 ${
+                        selected
+                          ? 'bg-surface text-on-surface shadow-sm'
+                          : 'text-on-surface-variant hover:bg-surface/70 hover:text-on-surface'
+                      }`}
+                    >
+                      <span className="block font-body-md text-xs font-medium">{source.label}</span>
+                      <span className="mt-0.5 block font-body-md text-[11px]">{source.detail}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <p className="mt-3 flex items-start gap-1.5 font-body-md text-xs leading-relaxed text-on-surface-variant">
+              <Icon name="verified_user" size={15} className="mt-0.5 shrink-0 text-primary" />
+              两个源使用同一模型工件；应用仍会校验固定字节数和 SHA-256，校验通过后才会加载。
+            </p>
+          </div>
+        )}
+
         <details className="rounded-lg border border-card-border bg-surface-container-low px-4 py-3" open={embedding.provider !== 'local' && embedding.provider !== 'none'}>
             <summary className="cursor-pointer font-body-md text-sm font-medium text-on-surface">高级远程 Embedding 设置</summary>
             <div className="mt-4 space-y-4">
@@ -2139,6 +2194,7 @@ function EmbeddingSettingsPanel({
       </div>
       {pendingLocalEmbedding && (
         <LocalEmbeddingDownloadDialog
+          downloadSource={pendingLocalEmbedding.downloadSource}
           onCancel={() => {
             setPendingLocalEmbedding(null);
             setMessage({ type: 'info', text: '已取消启用，未下载本地模型。' });
@@ -2191,9 +2247,11 @@ function EmbeddingSetupProgress({ state }: { state: EmbeddingRuntimeStatus['stat
 }
 
 function LocalEmbeddingDownloadDialog({
+  downloadSource,
   onCancel,
   onConfirm,
 }: {
+  downloadSource: EmbeddingSettingsValue['downloadSource'];
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -2233,6 +2291,10 @@ function LocalEmbeddingDownloadDialog({
           <dd className="break-all font-medium text-on-surface">multilingual-e5-small</dd>
           <dt className="text-on-surface-variant">存储位置</dt>
           <dd className="font-medium text-on-surface">本机应用缓存</dd>
+          <dt className="text-on-surface-variant">下载源</dt>
+          <dd className="font-medium text-on-surface">
+            {downloadSource === 'modelscope' ? 'ModelScope 国内源' : 'Hugging Face 官方源'}
+          </dd>
           <dt className="text-on-surface-variant">数据传输</dt>
           <dd className="font-medium text-on-surface">仓库内容不会发送到远程服务</dd>
         </dl>
