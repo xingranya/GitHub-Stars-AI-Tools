@@ -5,7 +5,7 @@
   "identifier": "com.xingranya.github-stars-ai-tools",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build && node scripts/prepare-native-runtime.mjs --bootstrap",
     "beforeBundleCommand": "node scripts/prepare-native-runtime.mjs",
     "devUrl": "http://127.0.0.1:1420",
     "frontendDist": "../dist"
