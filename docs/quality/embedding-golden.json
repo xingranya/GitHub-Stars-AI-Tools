@@ -1,0 +1,147 @@
+{
+  "version": 2,
+  "documents": [
+    {
+      "id": "521xueweihan/HelloGitHub",
+      "text": "分享 GitHub 上有趣、入门级的开源项目。Share interesting, entry-level open source projects on GitHub."
+    },
+    {
+      "id": "krahets/hello-algo",
+      "text": "《Hello 算法》：动画图解、一键运行的数据结构与算法教程，提供多种编程语言实现。"
+    },
+    {
+      "id": "justjavac/free-programming-books-zh_CN",
+      "text": "免费的计算机编程类中文书籍合集。"
+    },
+    {
+      "id": "ruanyf/weekly",
+      "text": "科技爱好者周刊，每周五发布。"
+    },
+    {
+      "id": "TapXWorld/ChinaTextbook",
+      "text": "收集小学、初中、高中和大学的 PDF 教材。"
+    },
+    {
+      "id": "PKUFlyingPig/cs-self-learning",
+      "text": "计算机科学自学指南和课程资源。"
+    },
+    {
+      "id": "ZhuLinsen/daily_stock_analysis",
+      "text": "LLM 驱动的多市场股票分析系统，提供多源行情、实时新闻、决策看板和自动推送。"
+    },
+    {
+      "id": "666ghj/BettaFish",
+      "text": "人人可用的多 Agent 舆情分析助手，用于还原舆情、预测走向和辅助决策。"
+    },
+    {
+      "id": "PDFMathTranslate/PDFMathTranslate",
+      "text": "完整保留排版的 PDF 科研论文双语翻译工具，支持命令行、图形界面和多种翻译服务。"
+    },
+    {
+      "id": "sunface/rust-course",
+      "text": "全面深入的 Rust 中文学习教程，包含讲解、示例和完整语言知识。"
+    },
+    {
+      "id": "microsoft/markitdown",
+      "text": "Python tool for converting files and Office documents to Markdown."
+    },
+    {
+      "id": "firecrawl/firecrawl",
+      "text": "An API to search, scrape, crawl, and interact with websites at scale."
+    },
+    {
+      "id": "rustdesk/rustdesk",
+      "text": "An open-source remote desktop application designed for self-hosting as an alternative to TeamViewer."
+    },
+    {
+      "id": "clash-verge-rev/clash-verge-rev",
+      "text": "A modern cross-platform proxy GUI client built with Tauri for Windows, macOS, and Linux."
+    },
+    {
+      "id": "github/spec-kit",
+      "text": "Toolkit to help software teams get started with Spec-Driven Development."
+    },
+    {
+      "id": "opendatalab/MinerU",
+      "text": "Transforms complex PDF and Office documents into LLM-ready Markdown and JSON."
+    },
+    {
+      "id": "microsoft/PowerToys",
+      "text": "A collection of Windows utilities that improve productivity and customization."
+    },
+    {
+      "id": "freeCodeCamp/freeCodeCamp",
+      "text": "An open-source curriculum for learning mathematics, programming, and computer science."
+    },
+    {
+      "id": "rtk-ai/rtk",
+      "text": "A Rust command-line proxy that reduces language model token consumption for common development commands."
+    },
+    {
+      "id": "tw93/Pake",
+      "text": "Turn any webpage into a lightweight desktop application with one command."
+    }
+  ],
+  "groups": [
+    {
+      "name": "zh-zh",
+      "queries": [
+        { "id": "zh-zh-01", "query": "适合新手发现有趣开源项目的合集", "positive": ["521xueweihan/HelloGitHub"] },
+        { "id": "zh-zh-02", "query": "用动画图解学习数据结构与算法", "positive": ["krahets/hello-algo"] },
+        { "id": "zh-zh-03", "query": "免费的中文计算机编程书籍", "positive": ["justjavac/free-programming-books-zh_CN"] },
+        { "id": "zh-zh-04", "query": "每周发布的科技爱好者周刊", "positive": ["ruanyf/weekly"] },
+        { "id": "zh-zh-05", "query": "中小学和大学 PDF 教材", "positive": ["TapXWorld/ChinaTextbook"] },
+        { "id": "zh-zh-06", "query": "计算机专业自学路线和课程指南", "positive": ["PKUFlyingPig/cs-self-learning"] },
+        { "id": "zh-zh-07", "query": "大模型分析股票行情新闻并自动推送", "positive": ["ZhuLinsen/daily_stock_analysis"] },
+        { "id": "zh-zh-08", "query": "多个智能体协作分析网络舆情", "positive": ["666ghj/BettaFish"] },
+        { "id": "zh-zh-09", "query": "保留论文排版的 PDF 双语翻译", "positive": ["PDFMathTranslate/PDFMathTranslate"] },
+        { "id": "zh-zh-10", "query": "系统学习 Rust 的中文教程", "positive": ["sunface/rust-course"] }
+      ]
+    },
+    {
+      "name": "en-en",
+      "queries": [
+        { "id": "en-en-01", "query": "convert Office files into Markdown", "positive": ["microsoft/markitdown"] },
+        { "id": "en-en-02", "query": "API for crawling and scraping websites at scale", "positive": ["firecrawl/firecrawl"] },
+        { "id": "en-en-03", "query": "self-hosted open source remote desktop", "positive": ["rustdesk/rustdesk"] },
+        { "id": "en-en-04", "query": "cross-platform Tauri proxy desktop client", "positive": ["clash-verge-rev/clash-verge-rev"] },
+        { "id": "en-en-05", "query": "toolkit for spec driven software development", "positive": ["github/spec-kit"] },
+        { "id": "en-en-06", "query": "extract complex PDFs into LLM ready Markdown", "positive": ["opendatalab/MinerU"] },
+        { "id": "en-en-07", "query": "Windows utilities for productivity and customization", "positive": ["microsoft/PowerToys"] },
+        { "id": "en-en-08", "query": "open source programming and computer science curriculum", "positive": ["freeCodeCamp/freeCodeCamp"] },
+        { "id": "en-en-09", "query": "reduce LLM token usage for shell commands", "positive": ["rtk-ai/rtk"] },
+        { "id": "en-en-10", "query": "package a website as a lightweight desktop app", "positive": ["tw93/Pake"] }
+      ]
+    },
+    {
+      "name": "zh-en",
+      "queries": [
+        { "id": "zh-en-01", "query": "把 Office 文件转换成 Markdown", "positive": ["microsoft/markitdown"] },
+        { "id": "zh-en-02", "query": "大规模抓取和搜索网站内容的接口", "positive": ["firecrawl/firecrawl"] },
+        { "id": "zh-en-03", "query": "可以自己部署的开源远程桌面", "positive": ["rustdesk/rustdesk"] },
+        { "id": "zh-en-04", "query": "使用 Tauri 开发的跨平台代理客户端", "positive": ["clash-verge-rev/clash-verge-rev"] },
+        { "id": "zh-en-05", "query": "规格驱动软件开发工具包", "positive": ["github/spec-kit"] },
+        { "id": "zh-en-06", "query": "将复杂 PDF 提取成大模型可用的 Markdown", "positive": ["opendatalab/MinerU"] },
+        { "id": "zh-en-07", "query": "提升 Windows 效率和定制能力的工具集", "positive": ["microsoft/PowerToys"] },
+        { "id": "zh-en-08", "query": "免费的编程与计算机科学学习课程", "positive": ["freeCodeCamp/freeCodeCamp"] },
+        { "id": "zh-en-09", "query": "减少终端命令输出消耗的大模型令牌", "positive": ["rtk-ai/rtk"] },
+        { "id": "zh-en-10", "query": "把网页打包成轻量桌面应用", "positive": ["tw93/Pake"] }
+      ]
+    },
+    {
+      "name": "en-zh",
+      "queries": [
+        { "id": "en-zh-01", "query": "beginner friendly collection of interesting GitHub projects", "positive": ["521xueweihan/HelloGitHub"] },
+        { "id": "en-zh-02", "query": "animated visual tutorial for algorithms and data structures", "positive": ["krahets/hello-algo"] },
+        { "id": "en-zh-03", "query": "free Chinese computer programming books", "positive": ["justjavac/free-programming-books-zh_CN"] },
+        { "id": "en-zh-04", "query": "weekly newsletter for technology enthusiasts", "positive": ["ruanyf/weekly"] },
+        { "id": "en-zh-05", "query": "PDF textbooks for school and university students", "positive": ["TapXWorld/ChinaTextbook"] },
+        { "id": "en-zh-06", "query": "self study roadmap for computer science", "positive": ["PKUFlyingPig/cs-self-learning"] },
+        { "id": "en-zh-07", "query": "LLM stock market analysis with news and notifications", "positive": ["ZhuLinsen/daily_stock_analysis"] },
+        { "id": "en-zh-08", "query": "multi agent public opinion analysis assistant", "positive": ["666ghj/BettaFish"] },
+        { "id": "en-zh-09", "query": "bilingual translation of PDF research papers preserving layout", "positive": ["PDFMathTranslate/PDFMathTranslate"] },
+        { "id": "en-zh-10", "query": "comprehensive Chinese tutorial for learning Rust", "positive": ["sunface/rust-course"] }
+      ]
+    }
+  ]
+}
