@@ -7,6 +7,13 @@ import {
 } from './ai-config';
 
 describe('Embedding 配置', () => {
+  it('新用户默认使用关闭的本地模型配置', () => {
+    expect(DEFAULT_SETTINGS.embedding.enabled).toBe(false);
+    expect(DEFAULT_SETTINGS.embedding.provider).toBe('local');
+    expect(DEFAULT_SETTINGS.embedding.model).toBe('intfloat/multilingual-e5-small');
+    expect(DEFAULT_SETTINGS.embedding.dimensions).toBe(384);
+  });
+
   it('归一化维度、阈值和结果上限', () => {
     const normalized = normalizeEmbeddingSettings({
       ...DEFAULT_SETTINGS.embedding,

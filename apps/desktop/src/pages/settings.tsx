@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useWorkspace } from '@/providers/workspace-provider';
@@ -25,7 +26,7 @@ import type {
   ThemeSettings as ThemeSettingsValue,
 } from '@/types-settings';
 
-type SettingsTab = 'github' | 'ai' | 'general' | 'backup' | 'about';
+type SettingsTab = 'github' | 'ai' | 'embedding' | 'general' | 'backup' | 'about';
 type AIProviderPreset = AISettingsValue['providerPreset'];
 
 type AIProviderPresetOption = {
@@ -37,6 +38,7 @@ type AIProviderPresetOption = {
   apiKeyLabel: string;
   modelPlaceholder: string;
   modelSuggestions: string[];
+  icon: string;
 };
 
 const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
@@ -49,6 +51,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key',
     modelPlaceholder: '填写 OpenAI 模型 ID',
     modelSuggestions: ['gpt-5.5', 'gpt-5.5-mini', 'gpt-5.5-nano'],
+    icon: 'auto_awesome',
   },
   {
     id: 'anthropic',
@@ -59,6 +62,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key',
     modelPlaceholder: '填写 Claude 模型 ID',
     modelSuggestions: ['claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5'],
+    icon: 'psychology',
   },
   {
     id: 'openrouter',
@@ -69,6 +73,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key',
     modelPlaceholder: '例如 openai/gpt-5.5',
     modelSuggestions: ['openai/gpt-5.5', 'anthropic/claude-sonnet-5', 'deepseek/deepseek-chat'],
+    icon: 'route',
   },
   {
     id: 'deepseek',
@@ -79,6 +84,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key',
     modelPlaceholder: '例如 deepseek-chat',
     modelSuggestions: ['deepseek-chat', 'deepseek-reasoner'],
+    icon: 'travel_explore',
   },
   {
     id: 'moonshot',
@@ -89,6 +95,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key',
     modelPlaceholder: '例如 kimi-k2-0711-preview',
     modelSuggestions: ['kimi-k2-0711-preview', 'moonshot-v1-8k', 'moonshot-v1-32k'],
+    icon: 'dark_mode',
   },
   {
     id: 'qwen',
@@ -99,6 +106,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key',
     modelPlaceholder: '例如 qwen-plus',
     modelSuggestions: ['qwen-plus', 'qwen-max', 'qwen-turbo'],
+    icon: 'cloud',
   },
   {
     id: 'zhipu',
@@ -109,6 +117,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key',
     modelPlaceholder: '例如 glm-4.5',
     modelSuggestions: ['glm-4.5', 'glm-4.5-air', 'glm-4-flash'],
+    icon: 'neurology',
   },
   {
     id: 'siliconflow',
@@ -119,6 +128,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key',
     modelPlaceholder: '填写 SiliconFlow 模型 ID',
     modelSuggestions: ['Qwen/Qwen3-Coder-480B-A35B-Instruct', 'deepseek-ai/DeepSeek-V3', 'THUDM/GLM-4.1V-9B-Thinking'],
+    icon: 'memory',
   },
   {
     id: 'ollama',
@@ -129,6 +139,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key（可留空）',
     modelPlaceholder: '例如 llama3.1',
     modelSuggestions: ['llama3.1', 'qwen2.5-coder', 'deepseek-r1'],
+    icon: 'dns',
   },
   {
     id: 'lmstudio',
@@ -139,6 +150,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key（可留空）',
     modelPlaceholder: '填写本机加载的模型 ID',
     modelSuggestions: ['local-model'],
+    icon: 'desktop_windows',
   },
   {
     id: 'custom-openai-compatible',
@@ -149,6 +161,7 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key（本机服务可留空）',
     modelPlaceholder: '填写服务商模型 ID',
     modelSuggestions: [],
+    icon: 'tune',
   },
   {
     id: 'none',
@@ -159,8 +172,22 @@ const AI_PROVIDER_PRESETS: AIProviderPresetOption[] = [
     apiKeyLabel: 'API Key',
     modelPlaceholder: '选择服务后填写模型 ID',
     modelSuggestions: [],
+    icon: 'block',
   },
 ];
+const FEATURED_AI_PROVIDER_IDS: AIProviderPreset[] = [
+  'openai',
+  'anthropic',
+  'deepseek',
+  'qwen',
+  'ollama',
+  'custom-openai-compatible',
+];
+const FEATURED_AI_PROVIDER_PRESETS = AI_PROVIDER_PRESETS.filter((preset) => FEATURED_AI_PROVIDER_IDS.includes(preset.id));
+const MORE_AI_PROVIDER_PRESETS = AI_PROVIDER_PRESETS.filter(
+  (preset) => preset.id !== 'none' && !FEATURED_AI_PROVIDER_IDS.includes(preset.id),
+);
+const DISABLED_AI_PROVIDER_PRESET = AI_PROVIDER_PRESETS.find((preset) => preset.id === 'none')!;
 const PROJECT_REPOSITORY_URL = 'https://github.com/xingranya/GitHub-Stars-AI-Tools';
 const PROJECT_ISSUES_URL = 'https://github.com/xingranya/GitHub-Stars-AI-Tools/issues';
 const PROJECT_LICENSE_URL = 'https://github.com/xingranya/GitHub-Stars-AI-Tools/blob/main/LICENSE';
@@ -217,6 +244,7 @@ type EmbeddingRuntimeStatus = {
   enabled: boolean;
   provider: string;
   state: 'disabled' | 'missing' | 'downloading' | 'verifying' | 'loading' | 'indexing' | 'ready' | 'partial' | 'error';
+  modelReady: boolean;
   model: string;
   revision: string | null;
   profileId: string;
@@ -228,6 +256,18 @@ type EmbeddingRuntimeStatus = {
   message: string;
   canRetry: boolean;
 };
+
+type EmbeddingPanelMessage = {
+  type: 'success' | 'error' | 'info';
+  text: string;
+};
+
+const EMBEDDING_SETUP_STAGES = [
+  { state: 'downloading', label: '下载模型' },
+  { state: 'verifying', label: '校验文件' },
+  { state: 'loading', label: '加载模型' },
+  { state: 'indexing', label: '构建索引' },
+] as const;
 
 type VectorIndexBuildSummary = {
   totalCount: number;
@@ -247,6 +287,7 @@ export function SettingsPage() {
   const tabs: { key: SettingsTab; icon: string; label: string; shortLabel: string }[] = [
     { key: 'github', icon: 'code', label: 'GitHub 账号', shortLabel: '账号' },
     { key: 'ai', icon: 'smart_toy', label: 'AI 引擎配置', shortLabel: '引擎' },
+    { key: 'embedding', icon: 'database', label: '向量检索', shortLabel: '向量' },
     { key: 'general', icon: 'tune', label: '通用设置', shortLabel: '通用' },
     { key: 'backup', icon: 'backup', label: '数据备份', shortLabel: '备份' },
     { key: 'about', icon: 'info', label: '关于项目', shortLabel: '关于' },
@@ -254,13 +295,13 @@ export function SettingsPage() {
   const activeTabLabel = tabs.find((tab) => tab.key === activeTab)?.label ?? '设置';
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto p-4 sm:p-5 lg:p-margin-page">
-      <header className="mx-auto mb-6 flex w-full max-w-5xl flex-col items-center gap-4 text-center">
+    <div className="settings-page flex h-full min-h-0 flex-col overflow-y-auto p-4 sm:p-5 lg:p-margin-page">
+      <header className="mx-auto mb-6 flex w-full max-w-5xl flex-col items-start gap-4">
         <div>
           <h2 className="font-headline-md text-headline-md text-on-surface">设置</h2>
           <p className="mt-1 font-body-md text-sm text-on-surface-variant">{activeTabLabel}</p>
         </div>
-        <nav className="grid w-full max-w-[620px] grid-cols-5 gap-2 rounded-xl border border-card-border bg-surface/55 p-2 shadow-sm backdrop-blur-md">
+        <nav className="grid w-full grid-cols-3 gap-1 rounded-lg border border-card-border bg-surface-container-lowest p-1 sm:grid-cols-6" aria-label="设置分类">
           {tabs.map((tab) => (
             <button
               key={tab.key}
@@ -269,14 +310,14 @@ export function SettingsPage() {
               title={tab.label}
               aria-label={tab.label}
               aria-current={activeTab === tab.key ? 'page' : undefined}
-              className={`flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-all ${
+              className={`flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md px-2 py-2 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-primary/35 focus:ring-offset-1 ${
                 activeTab === tab.key
-                  ? 'bg-primary text-white shadow-sm'
+                  ? 'bg-primary/10 text-primary'
                   : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
               }`}
             >
               <Icon name={tab.icon} size={19} />
-              <span className="truncate font-label-sm text-[11px]">{tab.shortLabel}</span>
+              <span className="truncate font-body-md text-xs font-medium">{tab.shortLabel}</span>
             </button>
           ))}
         </nav>
@@ -297,6 +338,12 @@ export function SettingsPage() {
           />
         )}
         {activeTab === 'ai' && <AISettings settingsHook={settingsHook} />}
+        {activeTab === 'embedding' && (
+          <EmbeddingSettingsPanel
+            accountId={workspace.authState.user ? String(workspace.authState.user.id) : null}
+            settingsHook={settingsHook}
+          />
+        )}
         {activeTab === 'general' && <GeneralSettings settingsHook={settingsHook} workspace={workspace} />}
         {activeTab === 'backup' && <BackupSettings workspace={workspace} />}
         {activeTab === 'about' && <AboutSettings appUpdate={appUpdate} />}
@@ -623,7 +670,7 @@ function GitHubSettings({
       </section>
 
       {/* 同步操作 */}
-      <section className="glass-panel rounded-xl p-6">
+      <section className="glass-panel rounded-lg p-6">
         <h3 className="font-headline-md text-[20px] font-semibold text-on-surface mb-4">数据同步操作</h3>
         <div className="flex flex-wrap gap-3">
           <button
@@ -1014,7 +1061,6 @@ function RuntimeCheckRow({ title, item }: { title: string; item: RuntimeReadines
 
 /* === AI 引擎设置 === */
 function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSettings> }) {
-  const workspace = useWorkspace();
   const ai = settingsHook.settings.ai;
   const needsRemoteConfig = ai.provider !== 'none';
   const hasSavedApiKey = isSavedAiApiKeyPlaceholder(ai.apiKey);
@@ -1025,6 +1071,9 @@ function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSe
   const [testMessage, setTestMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [modelListMessage, setModelListMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testDialog, setTestDialog] = useState<AiTestDialogState | null>(null);
+  const [moreProvidersOpen, setMoreProvidersOpen] = useState(
+    MORE_AI_PROVIDER_PRESETS.some((preset) => preset.id === ai.providerPreset),
+  );
   const activeTestRequestRef = useRef<{ requestId: string; startedAt: number; firstTokenSeen: boolean } | null>(null);
   const currentPreset = getAiProviderPreset(ai.providerPreset);
   const endpointPlaceholder = currentPreset.baseUrl || getAiEndpointPlaceholder(ai.provider);
@@ -1253,7 +1302,7 @@ function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSe
 
   return (
     <>
-      <section className="glass-panel rounded-xl p-6">
+      <section className="glass-panel rounded-lg p-6">
         <div className="mb-4">
           <h3 className="font-headline-md text-[20px] font-semibold text-on-surface">AI 引擎配置</h3>
           <p className="mt-1 font-body-md text-sm text-on-surface-variant">
@@ -1270,38 +1319,72 @@ function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSe
           </p>
         </div>
         <div className="space-y-6">
-        <div>
-          <label className="font-body-md text-on-surface font-medium mb-2 block">AI 服务</label>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {AI_PROVIDER_PRESETS.map((preset) => {
-              const selected = currentPreset.id === preset.id;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => void handleProviderPresetChange(preset.id)}
-                  aria-pressed={selected}
-                  className={`min-h-[82px] rounded-lg border px-3 py-2 text-left transition-all focus:outline-none focus:ring-2 focus:ring-primary/30 ${
-                    selected
-                      ? 'border-primary bg-primary/10 text-on-surface shadow-sm'
-                      : 'border-outline-variant/30 bg-surface-container-low text-on-surface hover:border-primary/40 hover:bg-surface-container-high'
-                  }`}
-                >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="font-body-md text-sm font-semibold">{preset.label}</span>
-                    {selected && <Icon name="check_circle" size={16} className="text-primary" />}
-                  </span>
-                  <span className="mt-1 block text-xs leading-relaxed text-on-surface-variant">{preset.description}</span>
-                  <span className="mt-2 block truncate text-[11px] text-on-surface-variant">
-                    {preset.provider === 'none' ? '关闭远程 AI' : preset.baseUrl || '手动填写请求地址'}
-                  </span>
-                </button>
-              );
-            })}
+        <div className="space-y-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h4 className="font-body-md text-sm font-semibold text-on-surface">常用服务</h4>
+              <p className="mt-1 font-body-md text-xs text-on-surface-variant">
+                当前使用 {currentPreset.label}，切换后再填写对应模型和凭据。
+              </p>
+            </div>
+            <span className="font-body-md text-xs text-on-surface-variant">
+              OpenAI 兼容服务使用 Chat Completions 协议
+            </span>
           </div>
-          <p className="font-body-md text-[13px] text-on-surface-variant mt-2">
-            OpenAI 兼容接口会按 Chat Completions 协议请求；Anthropic 使用 Claude Messages API。
-          </p>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {FEATURED_AI_PROVIDER_PRESETS.map((preset) => (
+              <AIProviderOption
+                key={preset.id}
+                preset={preset}
+                selected={currentPreset.id === preset.id}
+                onSelect={() => void handleProviderPresetChange(preset.id)}
+              />
+            ))}
+          </div>
+
+          <details
+            className="rounded-lg border border-card-border bg-surface-container-lowest"
+            open={moreProvidersOpen}
+            onToggle={(event) => setMoreProvidersOpen(event.currentTarget.open)}
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-body-md text-sm font-medium text-on-surface">
+              <span className="flex items-center gap-2">
+                <Icon name="apps" size={17} className="text-on-surface-variant" />
+                更多服务
+              </span>
+              <Icon name="expand_more" size={18} className="text-on-surface-variant" />
+            </summary>
+            <div className="grid gap-2 border-t border-card-border p-3 sm:grid-cols-2 xl:grid-cols-3">
+              {MORE_AI_PROVIDER_PRESETS.map((preset) => (
+                <AIProviderOption
+                  key={preset.id}
+                  preset={preset}
+                  selected={currentPreset.id === preset.id}
+                  onSelect={() => void handleProviderPresetChange(preset.id)}
+                />
+              ))}
+            </div>
+          </details>
+
+          <button
+            type="button"
+            onClick={() => void handleProviderPresetChange(DISABLED_AI_PROVIDER_PRESET.id)}
+            aria-pressed={currentPreset.id === DISABLED_AI_PROVIDER_PRESET.id}
+            className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30 ${
+              currentPreset.id === DISABLED_AI_PROVIDER_PRESET.id
+                ? 'border-warning/35 bg-warning/10 text-on-surface'
+                : 'border-card-border bg-transparent text-on-surface-variant hover:bg-surface-container-low'
+            }`}
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-container-high">
+              <Icon name={DISABLED_AI_PROVIDER_PRESET.icon} size={17} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-body-md text-sm font-medium text-on-surface">关闭 AI</span>
+              <span className="block font-body-md text-xs text-on-surface-variant">保留已保存 Key，只使用本地知识搜索</span>
+            </span>
+            {currentPreset.id === DISABLED_AI_PROVIDER_PRESET.id && <Icon name="check_circle" size={18} className="shrink-0 text-warning" />}
+          </button>
         </div>
         {needsRemoteConfig && (
           <>
@@ -1517,10 +1600,6 @@ function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSe
         </div>
         </div>
       </section>
-      <EmbeddingSettingsPanel
-        accountId={workspace.authState.user ? String(workspace.authState.user.id) : null}
-        settingsHook={settingsHook}
-      />
       {testDialog?.isOpen && (
         <AiTestDialog
           state={testDialog}
@@ -1529,6 +1608,42 @@ function AISettings({ settingsHook }: { settingsHook: ReturnType<typeof useAppSe
         />
       )}
     </>
+  );
+}
+
+function AIProviderOption({
+  preset,
+  selected,
+  onSelect,
+}: {
+  preset: AIProviderPresetOption;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={`flex min-h-[74px] min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30 ${
+        selected
+          ? 'border-primary bg-primary/10 text-on-surface'
+          : 'border-card-border bg-surface-container-lowest text-on-surface hover:border-primary/35 hover:bg-surface-container-low'
+      }`}
+    >
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${selected ? 'bg-primary text-white' : 'bg-surface-container-high text-on-surface-variant'}`}>
+        <Icon name={preset.icon} size={18} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="truncate font-body-md text-sm font-semibold">{preset.label}</span>
+          {selected && <Icon name="check_circle" size={15} className="shrink-0 text-primary" />}
+        </span>
+        <span className="mt-0.5 line-clamp-2 block font-body-md text-xs leading-relaxed text-on-surface-variant">
+          {preset.description}
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -1546,8 +1661,9 @@ function EmbeddingSettingsPanel({
   const [isRebuilding, setIsRebuilding] = useState(false);
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
   const [status, setStatus] = useState<EmbeddingRuntimeStatus | null>(null);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<EmbeddingPanelMessage | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
+  const [pendingLocalEmbedding, setPendingLocalEmbedding] = useState<EmbeddingSettingsValue | null>(null);
   const effectiveApiKey = apiKeyDraft.trim() ? apiKeyDraft : embedding.apiKey;
   const effectiveEmbedding = { ...embedding, apiKey: effectiveApiKey };
   const configMessage = getEmbeddingConfigMessage(effectiveEmbedding);
@@ -1561,6 +1677,7 @@ function EmbeddingSettingsPanel({
   useEffect(() => {
     setStatus(null);
     setMessage(null);
+    setPendingLocalEmbedding(null);
   }, [accountId, embedding.enabled, embedding.provider, embedding.baseUrl, embedding.model, embedding.dimensions]);
 
   useEffect(() => {
@@ -1643,7 +1760,7 @@ function EmbeddingSettingsPanel({
       });
       setStatus(result);
       if (!preserveMessage) {
-        setMessage(null);
+        setMessage({ type: 'info', text: `状态已更新：${result.message}` });
       }
     } catch (error) {
       setMessage({ type: 'error', text: toErrorMessage(error) });
@@ -1698,28 +1815,55 @@ function EmbeddingSettingsPanel({
       enabled: true,
       provider: embedding.provider === 'none' ? 'local' : embedding.provider,
     } as EmbeddingSettingsValue;
-    setMessage(null);
+    setMessage(nextEmbedding.provider === 'local'
+      ? { type: 'info', text: '正在检查本地模型…' }
+      : null);
+    setIsLoadingStatus(true);
     try {
       if (nextEmbedding.provider === 'local') {
         const runtime = await invoke<EmbeddingRuntimeStatus>('get_embedding_runtime_status', {
           request: { accountId, embeddingConfig: toBackendEmbeddingRequestConfig(nextEmbedding) },
         });
-        if (runtime.state === 'missing' && !window.confirm('本地 Embedding 模型约占 490 MB，将保存到本机应用缓存，下载完成后可断网使用。现在开始下载吗？')) {
+        setStatus(runtime);
+        if (!runtime.modelReady) {
+          setPendingLocalEmbedding(nextEmbedding);
+          setMessage(null);
           return;
         }
-        await settingsHook.updateEmbedding({ enabled: true, provider: 'local' });
-        setIsPreparing(true);
-        const result = await invoke<EmbeddingRuntimeStatus>('enable_local_embedding', {
-          request: { accountId, embeddingConfig: toBackendEmbeddingRequestConfig(nextEmbedding) },
-        });
-        setStatus(result);
-        setMessage(result.state === 'partial'
-          ? { type: 'error', text: result.message }
-          : { type: 'success', text: '本地向量检索已就绪。' });
+        await startLocalEmbedding(nextEmbedding);
       } else {
         await settingsHook.updateEmbedding({ enabled: true, provider: nextEmbedding.provider });
         setMessage({ type: 'success', text: '远程 Embedding 已启用，请在高级设置中检查连接。' });
       }
+    } catch (error) {
+      setMessage({ type: 'error', text: toErrorMessage(error) });
+    } finally {
+      setIsLoadingStatus(false);
+      setIsPreparing(false);
+    }
+  }
+
+  async function startLocalEmbedding(nextEmbedding: EmbeddingSettingsValue) {
+    await settingsHook.updateEmbedding({ enabled: true, provider: 'local' });
+    setIsPreparing(true);
+    const result = await invoke<EmbeddingRuntimeStatus>('enable_local_embedding', {
+      request: { accountId, embeddingConfig: toBackendEmbeddingRequestConfig(nextEmbedding) },
+    });
+    setStatus(result);
+    setMessage(result.state === 'partial'
+      ? { type: 'error', text: result.message }
+      : { type: 'success', text: '本地向量检索已就绪。' });
+  }
+
+  async function handleConfirmLocalEmbeddingDownload() {
+    const nextEmbedding = pendingLocalEmbedding;
+    if (!nextEmbedding || !accountId) {
+      return;
+    }
+    setPendingLocalEmbedding(null);
+    setMessage(null);
+    try {
+      await startLocalEmbedding(nextEmbedding);
     } catch (error) {
       setMessage({ type: 'error', text: toErrorMessage(error) });
     } finally {
@@ -1802,7 +1946,7 @@ function EmbeddingSettingsPanel({
   }
 
   return (
-    <section className="glass-panel rounded-xl p-6">
+    <section className="glass-panel rounded-lg p-6">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h3 className="font-headline-md text-[20px] font-semibold text-on-surface">向量检索</h3>
@@ -1892,7 +2036,7 @@ function EmbeddingSettingsPanel({
             />
           </label>
           <label className="grid gap-2 font-body-md text-sm font-medium text-on-surface">
-            最低相似度
+            AI 不可用时最低相似度
             <input
               type="number"
               min={0}
@@ -1905,7 +2049,7 @@ function EmbeddingSettingsPanel({
             />
           </label>
           <label className="grid gap-2 font-body-md text-sm font-medium text-on-surface">
-            最大结果数
+            AI 不可用时结果数
             <input
               type="number"
               min={1}
@@ -1925,7 +2069,7 @@ function EmbeddingSettingsPanel({
               <p className="font-body-md text-sm font-medium text-on-surface">
                 {status?.message ?? (embedding.enabled ? '可检查本机索引状态。' : '启用后可生成并使用语义向量。')}
               </p>
-              {status?.enabled && (
+              {embedding.enabled && status && (
                 <p className="mt-1 font-body-md text-xs text-on-surface-variant">
                   已索引 {status.indexedCount} / {status.totalCount} 个仓库 · {status.model} / {status.dimensions} 维 · 缓存 {(status.cacheBytes / 1024 / 1024).toFixed(0)} MB
                 </p>
@@ -1956,7 +2100,17 @@ function EmbeddingSettingsPanel({
               >
                 {isRebuilding ? '重建中…' : '重建索引'}
               </button>
-              {embedding.provider === 'local' && status?.canRetry && (
+              {embedding.provider === 'local' && !embedding.enabled && (
+                <button
+                  type="button"
+                  onClick={() => void handleToggle(true)}
+                  disabled={!accountId || isLoadingStatus || isPreparing}
+                  className="gsat-primary-button rounded-lg bg-primary px-3 py-2 font-body-md text-sm font-medium text-white transition-colors hover:bg-primary-container disabled:opacity-60"
+                >
+                  下载并启用
+                </button>
+              )}
+              {embedding.provider === 'local' && embedding.enabled && status?.canRetry && (
                 <button type="button" onClick={() => void handleRetry()} disabled={isPreparing} className="rounded-lg border border-card-border bg-surface-container-high px-3 py-2 font-body-md text-sm text-on-surface disabled:opacity-60">重试准备</button>
               )}
               {embedding.provider === 'local' && !embedding.enabled && Boolean(status?.cacheBytes) && (
@@ -1964,19 +2118,145 @@ function EmbeddingSettingsPanel({
               )}
             </div>
           </div>
+          {status && <EmbeddingSetupProgress state={status.state} />}
           {!canUseEmbedding && (
             <p className="mt-3 font-body-md text-xs text-on-surface-variant">
               {accountId ? configMessage : '请先连接 GitHub 账号并同步 Stars。'}
             </p>
           )}
           {message && (
-            <p className={`mt-3 rounded-lg border px-3 py-2 font-body-md text-sm ${message.type === 'success' ? 'border-success/20 bg-success/10 text-success' : 'border-error/20 bg-error/10 text-error'}`}>
+            <p className={`mt-3 rounded-lg border px-3 py-2 font-body-md text-sm ${
+              message.type === 'success'
+                ? 'border-success/20 bg-success/10 text-success'
+                : message.type === 'error'
+                  ? 'border-error/20 bg-error/10 text-error'
+                  : 'border-primary/20 bg-primary/10 text-primary'
+            }`}>
               {message.text}
             </p>
           )}
         </div>
       </div>
+      {pendingLocalEmbedding && (
+        <LocalEmbeddingDownloadDialog
+          onCancel={() => {
+            setPendingLocalEmbedding(null);
+            setMessage({ type: 'info', text: '已取消启用，未下载本地模型。' });
+          }}
+          onConfirm={() => void handleConfirmLocalEmbeddingDownload()}
+        />
+      )}
     </section>
+  );
+}
+
+function EmbeddingSetupProgress({ state }: { state: EmbeddingRuntimeStatus['state'] }) {
+  const activeIndex = EMBEDDING_SETUP_STAGES.findIndex((stage) => stage.state === state);
+  if (activeIndex < 0) {
+    return null;
+  }
+
+  const activeStage = EMBEDDING_SETUP_STAGES[activeIndex];
+  return (
+    <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3" role="status">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="font-medium text-on-surface">{activeStage.label}中</span>
+        <span className="text-on-surface-variant">阶段 {activeIndex + 1} / {EMBEDDING_SETUP_STAGES.length}</span>
+      </div>
+      <div
+        className="mt-2 grid grid-cols-4 gap-1"
+        role="progressbar"
+        aria-label="本地向量模型准备进度"
+        aria-valuetext={`${activeStage.label}，第 ${activeIndex + 1} 阶段，共 ${EMBEDDING_SETUP_STAGES.length} 阶段`}
+      >
+        {EMBEDDING_SETUP_STAGES.map((stage, index) => (
+          <div key={stage.state} className="h-1.5 overflow-hidden rounded-full bg-surface-container-high">
+            {index < activeIndex && <div className="h-full w-full rounded-full bg-success" />}
+            {index === activeIndex && <div className="task-progress-indeterminate h-full w-1/3 rounded-full bg-primary" />}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-4 gap-1 text-center text-[11px] text-on-surface-variant">
+        {EMBEDDING_SETUP_STAGES.map((stage, index) => (
+          <span key={stage.state} className={index === activeIndex ? 'font-medium text-primary' : ''}>
+            {stage.label}
+          </span>
+        ))}
+      </div>
+      {state === 'downloading' && (
+        <p className="mt-2 text-xs text-on-surface-variant">模型文件较大，请保持应用开启。下载完成后会自动校验并继续建库。</p>
+      )}
+    </div>
+  );
+}
+
+function LocalEmbeddingDownloadDialog({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-md">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="local-embedding-download-title"
+        className="w-full max-w-md rounded-lg border border-card-border bg-surface p-5 shadow-xl shadow-black/20"
+      >
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <Icon name="cloud_download" size={20} className="text-primary" />
+          </span>
+          <div className="min-w-0">
+            <h4 id="local-embedding-download-title" className="font-body-lg font-semibold text-on-surface">
+              下载本地向量模型
+            </h4>
+            <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
+              首次启用需要下载约 490 MB 的中英双语模型。模型只保存在本机，下载完成后可断网检索。
+            </p>
+          </div>
+        </div>
+        <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 border-y border-outline-variant/30 py-3 text-sm">
+          <dt className="text-on-surface-variant">模型</dt>
+          <dd className="break-all font-medium text-on-surface">multilingual-e5-small</dd>
+          <dt className="text-on-surface-variant">存储位置</dt>
+          <dd className="font-medium text-on-surface">本机应用缓存</dd>
+          <dt className="text-on-surface-variant">数据传输</dt>
+          <dd className="font-medium text-on-surface">仓库内容不会发送到远程服务</dd>
+        </dl>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex items-center justify-center rounded-lg border border-outline-variant/40 bg-surface-container-low px-4 py-2 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-high"
+          >
+            暂不启用
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            autoFocus
+            className="gsat-primary-button inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-container"
+          >
+            <Icon name="cloud_download" size={17} />
+            下载并启用
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

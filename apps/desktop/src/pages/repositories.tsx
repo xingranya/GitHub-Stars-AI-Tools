@@ -298,19 +298,19 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
     ? '请先连接 GitHub 账号'
     : !hasBatchTargets
       ? '当前列表没有可处理仓库'
-      : aiConfigMessage ?? '批量生成 AI 摘要';
+      : aiConfigMessage ?? '只解析缺失摘要或 README 已变化的仓库';
   const batchAiActionNotice = !hasConnectedUser
     ? '请先连接 GitHub 账号，随后可批量生成 AI 摘要。'
     : !hasBatchTargets
       ? '当前列表没有可处理仓库，请调整筛选条件后再批量解析。'
     : aiConfigMessage
       ? aiConfigMessage
-      : `批量 AI 会自动补抓缺失 README，仅跳过已是最新摘要的仓库；本次处理${batchTargetScopeLabel}，失败项会保留在结果里，不影响已生成内容。`;
+      : `增量 AI 只处理缺失摘要或 README 已变化的仓库；已是最新的内容不会重新提交。范围：${batchTargetScopeLabel}。`;
   const batchAiActionNoticeTone = !hasConnectedUser || !hasBatchTargets || Boolean(aiConfigMessage) ? 'error' : 'muted';
   const batchAiLimitValue = getBatchAiLimitValue(batchAiLimit);
   const batchAiLimitLabel = batchAiLimitValue
-    ? `${batchTargetScopeLabel}，最多解析 ${batchAiLimitValue} 个`
-    : `${batchTargetScopeLabel}，不限制数量`;
+    ? `${batchTargetScopeLabel}，最多更新 ${batchAiLimitValue} 个`
+    : `${batchTargetScopeLabel}，处理全部待更新项`;
   const recommendationActionTitle = !hasConnectedUser
     ? '请先连接 GitHub 账号'
     : selectedRecommendationIds.length === 0
@@ -530,14 +530,14 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                 title={batchAiActionTitle}
               >
                 <Icon name={workspace.isBatchGeneratingAiDocuments ? 'progress_activity' : 'auto_awesome'} size={15} className={workspace.isBatchGeneratingAiDocuments ? 'animate-spin' : ''} />
-                {workspace.isBatchGeneratingAiDocuments ? '分析中' : '批量 AI'}
+                {workspace.isBatchGeneratingAiDocuments ? '分析中' : '增量 AI'}
               </button>
             </div>
             <div className="mx-2 mb-3 mt-2 flex flex-col gap-2 rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-2">
                 <Icon name="speed" size={15} className="shrink-0 text-primary" />
                 <div className="min-w-0">
-                  <p className="font-medium text-on-surface">AI 批量上限</p>
+                  <p className="font-medium text-on-surface">本次更新上限</p>
                   <p className="truncate">{batchAiLimitLabel}</p>
                 </div>
               </div>
@@ -546,9 +546,9 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                 onChange={(event) => setBatchAiLimit(event.target.value as BatchAiLimit)}
                 disabled={workspace.isBatchGeneratingAiDocuments || workspace.isFetchingReadmes}
                 className="h-8 rounded-lg border border-outline-variant/40 bg-surface px-2 text-xs text-on-surface outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-60"
-                title="选择本次批量 AI 解析的仓库上限"
+                title="选择本次增量 AI 解析的仓库上限"
               >
-                <option value="all">全部 Stars</option>
+                <option value="all">全部待更新</option>
                 <option value="50">最多 50 个</option>
                 <option value="100">最多 100 个</option>
                 <option value="300">最多 300 个</option>
@@ -565,7 +565,7 @@ export function RepositoriesPage(props: RepositoriesPageProps) {
                   : 'border-outline-variant/30 bg-surface-container-low text-on-surface-variant'
               }`}
             >
-              <span className="mr-1 font-medium">批量 AI：</span>
+              <span className="mr-1 font-medium">增量 AI：</span>
               {batchAiActionNotice}
             </div>
           )}

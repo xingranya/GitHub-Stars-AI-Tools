@@ -970,6 +970,14 @@ textarea {
   box-shadow: none;
 }
 
+/* 设置页使用安静的实体表面，避免表单区与弹窗遮罩叠加模糊。 */
+.settings-page .glass-panel {
+  background: var(--color-surface-container-lowest);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
 /* 搜索框/追问框自身不再显示全局 :focus-visible 的描边——聚焦态由外层容器边框表达，
    否则会在容器蓝框内再套一层带间距的蓝框，显得重复不协调。
    （此处必须是未分层规则，才能盖过同为未分层的全局 :focus-visible） */

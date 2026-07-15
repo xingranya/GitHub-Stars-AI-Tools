@@ -550,7 +550,7 @@ function getFailedTaskRetry(options: {
     case 'batch-generate-ai-documents': {
       const failedAiRepositoryIds = getFailureRepositoryIds(options.workspace.batchAiSummary?.failures);
       return {
-        label: failedAiRepositoryIds.length > 0 ? '重试失败 AI' : '重试批量 AI',
+        label: failedAiRepositoryIds.length > 0 ? '重试失败 AI' : '重试增量 AI',
         isRetrying: options.workspace.isBatchGeneratingAiDocuments,
         onRetry: () => {
           void (async () => {

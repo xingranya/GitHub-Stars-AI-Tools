@@ -78,6 +78,19 @@ type SearchPageRequest = {
   contextRepositoryIds: string[];
 };
 
+type SearchProgressState = {
+  stage: string;
+  status: string;
+  message: string;
+};
+
+const SEARCH_PROGRESS_STAGES = [
+  { id: 'plan', label: '理解问题', detail: '提取项目类型、能力和使用场景' },
+  { id: 'vector', label: '向量召回', detail: '从本地 Stars 中查找语义相关候选' },
+  { id: 'analyze', label: '核对证据', detail: '检查仓库名称、描述、Topics 和摘要' },
+  { id: 'answer', label: 'AI 筛选', detail: '去除噪声并确认最终推荐仓库' },
+] as const;
+
 export function AISearchPage(props: AISearchPageProps) {
   const workspace = useWorkspace();
   const settingsHook = useAppSettings();
@@ -95,6 +108,11 @@ export function AISearchPage(props: AISearchPageProps) {
   const [searchSessions, setSearchSessions] = useState<StoredSearchSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [searchPageRequest, setSearchPageRequest] = useState<SearchPageRequest | null>(null);
+  const [searchProgress, setSearchProgress] = useState<SearchProgressState>({
+    stage: 'plan',
+    status: 'started',
+    message: '正在理解你的搜索问题',
+  });
   const activeSearchRequestIdRef = useRef<string | null>(null);
   const accountId = workspace.authState.user ? String(workspace.authState.user.id) : null;
   const hasWorkspaceFilters = Boolean(
@@ -228,6 +246,13 @@ export function AISearchPage(props: AISearchPageProps) {
         return;
       }
       setMessages((current) => updateAssistantStreamMessage(current, payload));
+      if (payload.status !== 'delta') {
+        setSearchProgress({
+          stage: payload.stage,
+          status: payload.status,
+          message: payload.message ?? getSearchProgressFallbackMessage(payload.stage),
+        });
+      }
     }).then((nextUnlisten) => {
       unlisten = nextUnlisten;
     });
@@ -264,10 +289,16 @@ export function AISearchPage(props: AISearchPageProps) {
     setCurrentSessionId(nextSessionId);
     setIsWorkspaceMode(true);
     setIsSearching(true);
+    setResponse(null);
     setSearchPage(1);
     setSearchPageRequest(null);
     setErrorMessage(null);
     setSubmittedQuery(q);
+    setSearchProgress({
+      stage: 'plan',
+      status: 'started',
+      message: '正在理解你的搜索问题',
+    });
     setQuery('');
     saveHistory(q);
     const requestId = `ai-search-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -666,14 +697,18 @@ export function AISearchPage(props: AISearchPageProps) {
               <div className="flex items-center justify-between gap-3 border-b border-outline-variant/25 px-4 py-3">
                 <div className="min-w-0">
                   <h3 className="flex items-center gap-2 text-base font-semibold text-on-surface">
-                    <Icon name="temp_preferences_custom" size={18} className="text-primary" />
-                    搜索结果
+                    <Icon name={isSearching ? 'manage_search' : 'temp_preferences_custom'} size={18} className="text-primary" />
+                    {isSearching ? '正在筛选' : '搜索结果'}
                   </h3>
                   <p className="mt-0.5 truncate text-xs text-on-surface-variant">
-                    {isSearching ? '正在更新匹配结果' : response ? `已找到 ${response.totalCount} 个匹配仓库` : '搜索后会在这里保留结果'}
+                    {isSearching ? searchProgress.message : response ? `已找到 ${response.totalCount} 个匹配仓库` : '搜索后会在这里保留结果'}
                   </p>
                 </div>
-                {response && (
+                {isSearching ? (
+                  <span className="shrink-0 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                    {getSearchProgressStep(searchProgress.stage)} / {SEARCH_PROGRESS_STAGES.length}
+                  </span>
+                ) : response && (
                   <span className="shrink-0 rounded-full bg-surface-container-high px-2.5 py-1 text-xs font-medium text-on-surface-variant">
                     {results.length > 0 ? `${pageStart}-${pageEnd}` : '0'}/{response.totalCount}
                   </span>
@@ -734,13 +769,8 @@ export function AISearchPage(props: AISearchPageProps) {
                     </div>
                   )}
 
-                  {!errorMessage && !response && isSearching && (
-                    <div className="flex min-h-[160px] items-center justify-center rounded-lg border border-outline-variant/25 bg-surface-container-low px-4 py-10 text-sm text-on-surface-variant">
-                      <div className="inline-flex items-center justify-center gap-3">
-                        <Icon name="progress_activity" size={28} className="shrink-0 animate-spin text-primary" />
-                        <span className="leading-none">正在搜索你的 Stars 知识库</span>
-                      </div>
-                    </div>
+                  {!errorMessage && isSearching && (
+                    <SearchProcessPanel progress={searchProgress} />
                   )}
 
                   {!errorMessage && response && results.length === 0 && !isSearching && (
@@ -751,7 +781,7 @@ export function AISearchPage(props: AISearchPageProps) {
                     />
                   )}
 
-                  {results.length > 0 && (
+                  {!isSearching && results.length > 0 && (
                     <div className="space-y-3">
                       <div className={`grid grid-cols-1 gap-4 transition-opacity ${isLoadingResultsPage ? 'opacity-55' : 'opacity-100'}`}>
                         {results.map((result) => (
@@ -1171,6 +1201,73 @@ function UserMessageAvatar({ user }: { user: GitHubUser | null }) {
     <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/20 text-[10px] font-semibold text-white">
       {user?.login?.[0]?.toUpperCase() ?? '你'}
     </span>
+  );
+}
+
+function SearchProcessPanel({ progress }: { progress: SearchProgressState }) {
+  const activeIndex = Math.max(
+    0,
+    SEARCH_PROGRESS_STAGES.findIndex((stage) => stage.id === progress.stage),
+  );
+  const isDone = progress.stage === 'done';
+
+  return (
+    <section className="px-1 py-2" role="status" aria-live="polite" aria-label="搜索处理进度">
+      <div className="overflow-hidden rounded-full bg-surface-container-high">
+        <div className="task-progress-indeterminate h-1.5 w-1/3 rounded-full bg-primary" />
+      </div>
+      <div className="mt-5 flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon name="manage_search" size={21} />
+        </span>
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-on-surface">正在准备可信结果</h4>
+          <p className="mt-1 max-w-[58ch] text-xs leading-relaxed text-on-surface-variant">
+            {progress.message}
+          </p>
+        </div>
+      </div>
+
+      <ol className="mt-5 divide-y divide-outline-variant/25">
+        {SEARCH_PROGRESS_STAGES.map((stage, index) => {
+          const completed = isDone || index < activeIndex;
+          const active = !isDone && index === activeIndex;
+          return (
+            <li key={stage.id} className={`flex min-h-[62px] items-center gap-3 px-1 py-3 ${active ? 'bg-primary/5' : ''}`}>
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
+                completed
+                  ? 'bg-success/10 text-success'
+                  : active
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-surface-container-high text-on-surface-variant'
+              }`}>
+                <Icon
+                  name={completed ? 'check' : active ? 'progress_activity' : 'radio_button_unchecked'}
+                  size={15}
+                  className={active ? 'animate-spin' : ''}
+                />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className={`block text-sm font-medium ${active || completed ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+                  {stage.label}
+                </span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-on-surface-variant">
+                  {stage.detail}
+                </span>
+              </span>
+              <span className={`shrink-0 text-[11px] font-medium ${active ? 'text-primary' : completed ? 'text-success' : 'text-on-surface-variant'}`}>
+                {completed ? '完成' : active ? '进行中' : '等待'}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className="mt-4 flex items-start gap-2 rounded-md bg-surface-container-low px-3 py-2.5 text-xs leading-relaxed text-on-surface-variant">
+        <Icon name="verified" size={16} className="mt-0.5 shrink-0 text-primary" />
+        <span>最终仓库将在筛选完成后一次显示，处理中不会展示尚未确认的候选。</span>
+      </div>
+    </section>
   );
 }
 
@@ -1778,6 +1875,29 @@ function getStreamStageLabel(stage: string | null) {
       return '搜索失败';
     default:
       return 'AI';
+  }
+}
+
+function getSearchProgressStep(stage: string) {
+  if (stage === 'done') {
+    return SEARCH_PROGRESS_STAGES.length;
+  }
+  const index = SEARCH_PROGRESS_STAGES.findIndex((item) => item.id === stage);
+  return index >= 0 ? index + 1 : 1;
+}
+
+function getSearchProgressFallbackMessage(stage: string) {
+  switch (stage) {
+    case 'vector':
+      return '正在从本地向量索引召回候选仓库';
+    case 'analyze':
+      return '正在核对候选仓库的本地知识证据';
+    case 'answer':
+      return '正在筛选最终推荐仓库';
+    case 'done':
+      return '搜索处理完成';
+    default:
+      return '正在理解你的搜索问题';
   }
 }
 

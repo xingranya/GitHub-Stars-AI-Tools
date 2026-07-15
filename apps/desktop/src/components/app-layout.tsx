@@ -486,7 +486,7 @@ function TopbarQuickActionsMenu(props: {
         />
         <QuickActionMenuItem
           icon="auto_awesome"
-          label="批量 AI 解析"
+          label="增量 AI 解析"
           description="为已有 README 生成摘要、关键词和推荐标签。"
           disabled={needsGitHub || props.isBatchGeneratingAiDocuments}
           loading={props.isBatchGeneratingAiDocuments}
