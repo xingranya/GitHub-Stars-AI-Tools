@@ -2,29 +2,6 @@ name: Release Desktop Apps
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: "版本号，例如 0.1.0 或 v0.1.0"
-        required: true
-        type: string
-      changelog:
-        description: "简短更新日志；多行 Markdown 请填 changelog_file"
-        required: false
-        type: string
-      changelog_file:
-        description: "仓库内 Markdown 文件路径，例如 docs/releases/v0.1.0.md"
-        required: false
-        type: string
-      release_draft:
-        description: "是否创建草稿 Release"
-        required: true
-        default: false
-        type: boolean
-      prerelease:
-        description: "是否标记为预发布"
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: write
